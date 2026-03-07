@@ -1,6 +1,10 @@
 
+node_modules/
 .idea/
 
 dockervolume
 
 dockerbuild
+
+database/dokokostore.db
+
