@@ -1,0 +1,66 @@
+FROM ubuntu:22.04
+
+# Install dependencies and development tools
+RUN apt-get update && \
+    apt-get install -y \
+    curl \
+    ca-certificates \
+    tmux \
+    vim \
+    git \
+    build-essential \
+    wget \
+    python3 \
+    python3-pip \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ttyd 1.7.7 from GitHub releases
+RUN curl -L https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 -o /usr/local/bin/ttyd && \
+    chmod +x /usr/local/bin/ttyd
+
+# Install Go 1.22.0
+RUN wget https://go.dev/dl/go1.22.0.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz && \
+    rm go1.22.0.linux-amd64.tar.gz
+
+# Set Go environment variables
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="/root/go"
+ENV PATH="${GOPATH}/bin:${PATH}"
+
+# Install common Go tools
+RUN go install golang.org/x/tools/gopls@latest && \
+    go install github.com/go-delve/delve/cmd/dlv@latest && \
+    go install honnef.co/go/tools/cmd/staticcheck@latest
+
+# Install NVM and Node.js
+ENV NVM_DIR="/root/.nvm"
+ENV NODE_VERSION="20.11.0"
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && \
+    . "$NVM_DIR/nvm.sh" && \
+    nvm install ${NODE_VERSION} && \
+    nvm alias default ${NODE_VERSION} && \
+    nvm use default
+
+# Add NVM to PATH
+ENV PATH="${NVM_DIR}/versions/node/v${NODE_VERSION}/bin:${PATH}"
+
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create workspace directory
+RUN mkdir -p /workspace && chmod 777 /workspace
+
+# Set environment variables
+ENV TTYD_PORT=7681
+ENV TERM=xterm-256color
+
+# Set working directory
+WORKDIR /workspace
+
+# Expose ttyd port (will be mapped by Docker manager)
+EXPOSE 7681
+
+ENTRYPOINT ["/entrypoint.sh"]
