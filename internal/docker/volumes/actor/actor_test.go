@@ -253,8 +253,13 @@ func TestPrune_Failure_StateGoesFailed(t *testing.T) {
 
 func TestQueueFull_ReturnsErrAndAbandons(t *testing.T) {
 	blocker := make(chan struct{})
+	workerStarted := make(chan struct{}, 1)
 	ops := &fakeOps{
 		createFn: func(ctx context.Context, _ dockervolume.CreateOptions) (dockervolume.Volume, error) {
+			select {
+			case workerStarted <- struct{}{}:
+			default:
+			}
 			<-blocker
 			return dockervolume.Volume{}, nil
 		},
@@ -266,6 +271,8 @@ func TestQueueFull_ReturnsErrAndAbandons(t *testing.T) {
 	if err != nil {
 		t.Fatalf("occupier: %v", err)
 	}
+	// Wait until the worker has actually dequeued "occupier" before filling the queue.
+	<-workerStarted
 	// Fill the queue.
 	_, err = a.Create(context.Background(), dockervolume.CreateOptions{Name: "filler"})
 	if err != nil {
