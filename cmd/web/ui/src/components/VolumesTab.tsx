@@ -56,23 +56,23 @@ export default function VolumesTab() {
         <Btn onClick={() => act(pruneVolumes, 'Prune dispatched')}>Prune unused</Btn>
         <Btn onClick={() => act(refreshVolumes, 'Volume store refreshed')}>Refresh store</Btn>
         <Btn onClick={load} dim>↺ Reload</Btn>
-        {toast && <span className="text-green-400 text-xs ml-auto">{toast}</span>}
+        {toast && <span className="text-green-600 dark:text-green-400 text-xs ml-auto">{toast}</span>}
       </div>
 
       <table className="w-full text-xs border-collapse">
         <thead>
-          <tr className="border-b border-zinc-800 text-zinc-500">
+          <tr className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-500">
             <Th>Name</Th><Th>Driver</Th><Th>Mountpoint</Th><Th>Scope</Th><Th>Status</Th><Th>Actions</Th>
           </tr>
         </thead>
         <tbody>
-          {loading && <tr><td colSpan={6} className="py-6 text-center text-zinc-600">Loading…</td></tr>}
+          {loading && <tr><td colSpan={6} className="py-6 text-center text-zinc-400 dark:text-zinc-600">Loading…</td></tr>}
           {!loading && volumes.length === 0 && (
-            <tr><td colSpan={6} className="py-6 text-center text-zinc-600">No volumes in store</td></tr>
+            <tr><td colSpan={6} className="py-6 text-center text-zinc-400 dark:text-zinc-600">No volumes in store</td></tr>
           )}
           {volumes.map((v, i) => (
-            <tr key={v.Name ?? i} className="border-b border-zinc-800/50 hover:bg-zinc-900">
-              <Td><span className="text-cyan-400">{v.Name ?? '—'}</span></Td>
+            <tr key={v.Name ?? i} className="border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-900">
+              <Td><span className="text-cyan-600 dark:text-cyan-400">{v.Name ?? '—'}</span></Td>
               <Td>{v.Driver ?? '—'}</Td>
               <Td className="text-zinc-500 max-w-xs truncate">{v.Mountpoint ?? '—'}</Td>
               <Td>{v.Scope ?? '—'}</Td>
@@ -81,13 +81,13 @@ export default function VolumesTab() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => act(() => removeVolume(v.Name!), 'Remove dispatched')}
-                    className="text-red-400 hover:text-red-300 underline"
+                    className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 underline"
                   >
                     rm
                   </button>
                   <button
                     onClick={() => handleInspect(v)}
-                    className="text-zinc-400 hover:text-zinc-200 underline"
+                    className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 underline"
                   >
                     inspect
                   </button>
@@ -126,9 +126,9 @@ function Btn({ children, onClick, green, dim }: { children: React.ReactNode; onC
     <button
       onClick={onClick}
       className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-        green ? 'bg-green-700 hover:bg-green-600 text-white'
-        : dim  ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-500'
-        :         'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+        green ? 'bg-green-600 hover:bg-green-500 dark:bg-green-700 dark:hover:bg-green-600 text-white'
+        : dim  ? 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500'
+        :         'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200'
       }`}
     >
       {children}

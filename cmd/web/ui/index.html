@@ -9,8 +9,13 @@
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
+    <!-- Apply theme before first paint to avoid flash -->
+    <script>
+      const t = localStorage.getItem('theme') ?? 'dark'
+      if (t === 'dark') document.documentElement.classList.add('dark')
+    </script>
   </head>
-  <body class="bg-zinc-950 text-zinc-100 font-mono">
+  <body class="bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-mono">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

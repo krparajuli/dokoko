@@ -10,10 +10,10 @@ import InspectModal from './InspectModal.tsx'
 type ModalType = 'create' | null
 
 function stateColor(s: string) {
-  if (s === 'running') return 'text-green-400'
-  if (s === 'exited')  return 'text-red-400'
-  if (s === 'paused')  return 'text-yellow-400'
-  return 'text-zinc-400'
+  if (s === 'running') return 'text-green-600 dark:text-green-400'
+  if (s === 'exited')  return 'text-red-600 dark:text-red-400'
+  if (s === 'paused')  return 'text-yellow-600 dark:text-yellow-400'
+  return 'text-zinc-500 dark:text-zinc-400'
 }
 
 export default function ContainersTab() {
@@ -58,13 +58,13 @@ export default function ContainersTab() {
       <div className="flex items-center gap-2 flex-wrap">
         <Btn green onClick={() => setModal('create')}>Create</Btn>
         <Btn onClick={load} dim>↺ Reload</Btn>
-        {toast && <span className="text-green-400 text-xs ml-auto">{toast}</span>}
+        {toast && <span className="text-green-600 dark:text-green-400 text-xs ml-auto">{toast}</span>}
       </div>
 
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-collapse">
           <thead>
-            <tr className="border-b border-zinc-800 text-zinc-500">
+            <tr className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-500">
               <Th>ID</Th>
               <Th>Name</Th>
               <Th>Image</Th>
@@ -75,16 +75,16 @@ export default function ContainersTab() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={6} className="py-6 text-center text-zinc-600">Loading…</td></tr>
+              <tr><td colSpan={6} className="py-6 text-center text-zinc-400 dark:text-zinc-600">Loading…</td></tr>
             )}
             {!loading && containers.length === 0 && (
-              <tr><td colSpan={6} className="py-6 text-center text-zinc-600">No containers found</td></tr>
+              <tr><td colSpan={6} className="py-6 text-center text-zinc-400 dark:text-zinc-600">No containers found</td></tr>
             )}
             {containers.map((c) => (
-              <tr key={c.Id} className="border-b border-zinc-800/50 hover:bg-zinc-900 transition-colors">
-                <Td><code className="text-yellow-400">{c.Id.slice(0, 12)}</code></Td>
+              <tr key={c.Id} className="border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors">
+                <Td><code className="text-yellow-600 dark:text-yellow-400">{c.Id.slice(0, 12)}</code></Td>
                 <Td>{c.Names?.map((n) => n.replace(/^\//, '')).join(', ') || '—'}</Td>
-                <Td className="text-cyan-400">{c.Image}</Td>
+                <Td className="text-cyan-600 dark:text-cyan-400">{c.Image}</Td>
                 <Td><span className={stateColor(c.State)}>{c.State}</span></Td>
                 <Td className="text-zinc-500">{c.Status}</Td>
                 <Td>
@@ -148,9 +148,9 @@ function Btn({ children, onClick, green, dim }: { children: React.ReactNode; onC
     <button
       onClick={onClick}
       className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-        green ? 'bg-green-700 hover:bg-green-600 text-white'
-        : dim  ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-500'
-        :         'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+        green ? 'bg-green-600 hover:bg-green-500 dark:bg-green-700 dark:hover:bg-green-600 text-white'
+        : dim  ? 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500'
+        :         'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200'
       }`}
     >
       {children}
@@ -159,10 +159,10 @@ function Btn({ children, onClick, green, dim }: { children: React.ReactNode; onC
 }
 
 function ActionBtn({ children, onClick, color }: { children: React.ReactNode; onClick: () => void; color?: 'green' | 'yellow' | 'red' }) {
-  const cls = color === 'green'  ? 'text-green-400 hover:text-green-300'
-            : color === 'yellow' ? 'text-yellow-400 hover:text-yellow-300'
-            : color === 'red'    ? 'text-red-400 hover:text-red-300'
-            : 'text-zinc-400 hover:text-zinc-200'
+  const cls = color === 'green'  ? 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300'
+            : color === 'yellow' ? 'text-yellow-600 dark:text-yellow-400 hover:text-yellow-700 dark:hover:text-yellow-300'
+            : color === 'red'    ? 'text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300'
+            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
   return (
     <button onClick={onClick} className={`underline ${cls}`}>{children}</button>
   )

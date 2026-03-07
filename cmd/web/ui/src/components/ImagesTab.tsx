@@ -14,11 +14,11 @@ function fmtBytes(n: number): string {
 }
 
 function statusColor(s: string) {
-  if (s === 'present') return 'text-green-400'
-  if (s === 'deleted') return 'text-red-400'
-  if (s === 'deleted_out_of_band') return 'text-orange-400'
-  if (s === 'errored') return 'text-red-500'
-  return 'text-zinc-400'
+  if (s === 'present') return 'text-green-600 dark:text-green-400'
+  if (s === 'deleted') return 'text-red-600 dark:text-red-400'
+  if (s === 'deleted_out_of_band') return 'text-orange-600 dark:text-orange-400'
+  if (s === 'errored') return 'text-red-600 dark:text-red-500'
+  return 'text-zinc-500 dark:text-zinc-400'
 }
 
 export default function ImagesTab() {
@@ -66,14 +66,14 @@ export default function ImagesTab() {
         <Btn onClick={() => setModal('tag')}>Tag</Btn>
         <Btn onClick={handleRefresh}>Refresh store</Btn>
         <Btn onClick={load} dim>↺ Reload</Btn>
-        {toast && <span className="text-green-400 text-xs ml-auto">{toast}</span>}
+        {toast && <span className="text-green-600 dark:text-green-400 text-xs ml-auto">{toast}</span>}
       </div>
 
       {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-collapse">
           <thead>
-            <tr className="border-b border-zinc-800 text-zinc-500">
+            <tr className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-500">
               <Th>ID</Th>
               <Th>Tags</Th>
               <Th>Size</Th>
@@ -85,23 +85,23 @@ export default function ImagesTab() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={7} className="py-6 text-center text-zinc-600">Loading…</td></tr>
+              <tr><td colSpan={7} className="py-6 text-center text-zinc-400 dark:text-zinc-600">Loading…</td></tr>
             )}
             {!loading && images.length === 0 && (
-              <tr><td colSpan={7} className="py-6 text-center text-zinc-600">No images in store</td></tr>
+              <tr><td colSpan={7} className="py-6 text-center text-zinc-400 dark:text-zinc-600">No images in store</td></tr>
             )}
             {images.map((img) => (
               <tr
                 key={img.DockerID}
-                className="border-b border-zinc-800/50 hover:bg-zinc-900 transition-colors"
+                className="border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
               >
-                <Td><code className="text-yellow-400">{img.ShortID}</code></Td>
+                <Td><code className="text-yellow-600 dark:text-yellow-400">{img.ShortID}</code></Td>
                 <Td>
                   {img.RepoTags?.length
                     ? img.RepoTags.map((t) => (
-                        <span key={t} className="mr-1 text-cyan-400">{t}</span>
+                        <span key={t} className="mr-1 text-cyan-600 dark:text-cyan-400">{t}</span>
                       ))
-                    : <span className="text-zinc-600">&lt;untagged&gt;</span>}
+                    : <span className="text-zinc-400 dark:text-zinc-600">&lt;untagged&gt;</span>}
                 </Td>
                 <Td>{fmtBytes(img.Size)}</Td>
                 <Td>{[img.OS, img.Architecture, img.Variant].filter(Boolean).join('/')}</Td>
@@ -110,7 +110,7 @@ export default function ImagesTab() {
                 <Td>
                   <button
                     onClick={() => { setSelected(img); handleInspect(img) }}
-                    className="text-zinc-400 hover:text-zinc-200 underline"
+                    className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 underline"
                   >
                     inspect
                   </button>
@@ -185,10 +185,10 @@ function Btn({
       onClick={onClick}
       className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
         green
-          ? 'bg-green-700 hover:bg-green-600 text-white'
+          ? 'bg-green-600 hover:bg-green-500 dark:bg-green-700 dark:hover:bg-green-600 text-white'
           : dim
-          ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-500'
-          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+          ? 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500'
+          : 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200'
       }`}
     >
       {children}

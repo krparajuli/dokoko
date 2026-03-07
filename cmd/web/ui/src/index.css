@@ -7,12 +7,22 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #18181b;
+  background: #f4f4f5; /* zinc-100 */
 }
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: #a1a1aa; /* zinc-400 */
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: #71717a; /* zinc-500 */
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #18181b; /* zinc-950 */
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #3f3f46; /* zinc-700 */
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #52525b; /* zinc-600 */
 }

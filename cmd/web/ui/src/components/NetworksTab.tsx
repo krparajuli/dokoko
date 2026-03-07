@@ -56,24 +56,24 @@ export default function NetworksTab() {
         <Btn onClick={() => act(pruneNetworks, 'Prune dispatched')}>Prune unused</Btn>
         <Btn onClick={() => act(refreshNetworks, 'Network store refreshed')}>Refresh store</Btn>
         <Btn onClick={load} dim>↺ Reload</Btn>
-        {toast && <span className="text-green-400 text-xs ml-auto">{toast}</span>}
+        {toast && <span className="text-green-600 dark:text-green-400 text-xs ml-auto">{toast}</span>}
       </div>
 
       <table className="w-full text-xs border-collapse">
         <thead>
-          <tr className="border-b border-zinc-800 text-zinc-500">
+          <tr className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-500">
             <Th>ID</Th><Th>Name</Th><Th>Driver</Th><Th>Scope</Th><Th>Status</Th><Th>Actions</Th>
           </tr>
         </thead>
         <tbody>
-          {loading && <tr><td colSpan={6} className="py-6 text-center text-zinc-600">Loading…</td></tr>}
+          {loading && <tr><td colSpan={6} className="py-6 text-center text-zinc-400 dark:text-zinc-600">Loading…</td></tr>}
           {!loading && networks.length === 0 && (
-            <tr><td colSpan={6} className="py-6 text-center text-zinc-600">No networks in store</td></tr>
+            <tr><td colSpan={6} className="py-6 text-center text-zinc-400 dark:text-zinc-600">No networks in store</td></tr>
           )}
           {networks.map((n, i) => (
-            <tr key={n.ID ?? i} className="border-b border-zinc-800/50 hover:bg-zinc-900">
-              <Td><code className="text-yellow-400">{(n.ID ?? '').slice(0, 12) || '—'}</code></Td>
-              <Td><span className="text-cyan-400">{n.Name ?? '—'}</span></Td>
+            <tr key={n.ID ?? i} className="border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-900">
+              <Td><code className="text-yellow-600 dark:text-yellow-400">{(n.ID ?? '').slice(0, 12) || '—'}</code></Td>
+              <Td><span className="text-cyan-600 dark:text-cyan-400">{n.Name ?? '—'}</span></Td>
               <Td>{n.Driver ?? '—'}</Td>
               <Td>{n.Scope ?? '—'}</Td>
               <Td>{n.Status ?? '—'}</Td>
@@ -81,13 +81,13 @@ export default function NetworksTab() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => act(() => removeNetwork(n.ID ?? n.Name!), 'Remove dispatched')}
-                    className="text-red-400 hover:text-red-300 underline"
+                    className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 underline"
                   >
                     rm
                   </button>
                   <button
                     onClick={() => handleInspect(n)}
-                    className="text-zinc-400 hover:text-zinc-200 underline"
+                    className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 underline"
                   >
                     inspect
                   </button>
@@ -126,9 +126,9 @@ function Btn({ children, onClick, green, dim }: { children: React.ReactNode; onC
     <button
       onClick={onClick}
       className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-        green ? 'bg-green-700 hover:bg-green-600 text-white'
-        : dim  ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-500'
-        :         'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+        green ? 'bg-green-600 hover:bg-green-500 dark:bg-green-700 dark:hover:bg-green-600 text-white'
+        : dim  ? 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500'
+        :         'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200'
       }`}
     >
       {children}

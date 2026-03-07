@@ -18,7 +18,7 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", ":8080", "HTTP server address")
+	addr := flag.String("addr", ":8888", "HTTP server address")
 	logLvl := flag.String("log", "info", "log level: error,warn,info,debug,trace")
 	uiDir := flag.String("ui-dir", "", "path to built UI files (ui/dist); auto-detected if empty")
 	flag.Parse()
