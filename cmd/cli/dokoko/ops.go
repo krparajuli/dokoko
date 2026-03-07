@@ -51,17 +51,29 @@ func (m model) makeCmd(opIdx int, vals []string) tea.Cmd {
 func runImageOp(ctx context.Context, mgr *dockermanager.Manager, opIdx int, v func(int) string) string {
 	switch opIdx {
 	case 0: // Pull
-		if _, err := mgr.Images().Pull(ctx, v(0), dockerimage.PullOptions{Platform: v(1)}); err != nil {
+		ticket, err := mgr.Images().Pull(ctx, v(0), dockerimage.PullOptions{Platform: v(1)})
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Pull dispatched: " + v(0)
 	case 1: // Remove
-		if _, err := mgr.Images().Remove(ctx, v(0), dockerimage.RemoveOptions{Force: true}); err != nil {
+		ticket, err := mgr.Images().Remove(ctx, v(0), dockerimage.RemoveOptions{Force: true})
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Remove dispatched: " + v(0)
 	case 2: // Tag
-		if _, err := mgr.Images().Tag(ctx, v(0), v(1)); err != nil {
+		ticket, err := mgr.Images().Tag(ctx, v(0), v(1))
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return fmt.Sprintf("Tagged %s → %s", v(0), v(1))
@@ -101,22 +113,38 @@ func runContainerOp(ctx context.Context, mgr *dockermanager.Manager, opIdx int, 
 	switch opIdx {
 	case 0: // Create
 		cfg := &dockercontainer.Config{Image: v(0)}
-		if _, err := mgr.Containers().Create(ctx, v(1), cfg, nil, nil); err != nil {
+		ticket, err := mgr.Containers().Create(ctx, v(1), cfg, nil, nil)
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return fmt.Sprintf("Container created (image=%s name=%s)", v(0), v(1))
 	case 1: // Start
-		if _, err := mgr.Containers().Start(ctx, v(0), dockercontainer.StartOptions{}); err != nil {
+		ticket, err := mgr.Containers().Start(ctx, v(0), dockercontainer.StartOptions{})
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Start dispatched: " + v(0)
 	case 2: // Stop
-		if _, err := mgr.Containers().Stop(ctx, v(0), dockercontainer.StopOptions{}); err != nil {
+		ticket, err := mgr.Containers().Stop(ctx, v(0), dockercontainer.StopOptions{})
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Stop dispatched: " + v(0)
 	case 3: // Remove
-		if _, err := mgr.Containers().Remove(ctx, v(0), dockercontainer.RemoveOptions{Force: true}); err != nil {
+		ticket, err := mgr.Containers().Remove(ctx, v(0), dockercontainer.RemoveOptions{Force: true})
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Remove dispatched: " + v(0)
@@ -158,17 +186,29 @@ func runContainerOp(ctx context.Context, mgr *dockermanager.Manager, opIdx int, 
 func runVolumeOp(ctx context.Context, mgr *dockermanager.Manager, opIdx int, v func(int) string) string {
 	switch opIdx {
 	case 0: // Create
-		if _, err := mgr.Volumes().Create(ctx, dockervolume.CreateOptions{Name: v(0), Driver: v(1)}); err != nil {
+		ticket, err := mgr.Volumes().Create(ctx, dockervolume.CreateOptions{Name: v(0), Driver: v(1)})
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Volume created: " + v(0)
 	case 1: // Remove
-		if _, err := mgr.Volumes().Remove(ctx, v(0), false); err != nil {
+		ticket, err := mgr.Volumes().Remove(ctx, v(0), false)
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Volume removed: " + v(0)
 	case 2: // Prune
-		if _, err := mgr.Volumes().Prune(ctx, dockerfilters.Args{}); err != nil {
+		ticket, err := mgr.Volumes().Prune(ctx, dockerfilters.Args{})
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Volume prune dispatched."
@@ -203,17 +243,29 @@ func runVolumeOp(ctx context.Context, mgr *dockermanager.Manager, opIdx int, v f
 func runNetworkOp(ctx context.Context, mgr *dockermanager.Manager, opIdx int, v func(int) string) string {
 	switch opIdx {
 	case 0: // Create
-		if _, err := mgr.Networks().Create(ctx, v(0), dockertypes.NetworkCreate{Driver: v(1)}); err != nil {
+		ticket, err := mgr.Networks().Create(ctx, v(0), dockertypes.NetworkCreate{Driver: v(1)})
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Network created: " + v(0)
 	case 1: // Remove
-		if _, err := mgr.Networks().Remove(ctx, v(0)); err != nil {
+		ticket, err := mgr.Networks().Remove(ctx, v(0))
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Network removed: " + v(0)
 	case 2: // Prune
-		if _, err := mgr.Networks().Prune(ctx, dockerfilters.Args{}); err != nil {
+		ticket, err := mgr.Networks().Prune(ctx, dockerfilters.Args{})
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Network prune dispatched."
@@ -253,12 +305,20 @@ func runExecOp(ctx context.Context, mgr *dockermanager.Manager, opIdx int, v fun
 			cmd = []string{"/bin/sh"}
 		}
 		cfg := dockertypes.ExecConfig{Cmd: cmd, AttachStdout: true, AttachStderr: true}
-		if _, err := mgr.Exec().Create(ctx, v(0), cfg); err != nil {
+		ticket, err := mgr.Exec().Create(ctx, v(0), cfg)
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Exec created in container: " + v(0)
 	case 1: // Start
-		if _, err := mgr.Exec().Start(ctx, v(0), dockertypes.ExecStartCheck{Detach: true}); err != nil {
+		ticket, err := mgr.Exec().Start(ctx, v(0), dockertypes.ExecStartCheck{Detach: true})
+		if err != nil {
+			return "Error: " + err.Error()
+		}
+		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
 		return "Exec started: " + v(0)

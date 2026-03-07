@@ -30,9 +30,14 @@ func (h *handler) createNetwork(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Networks().Create(ctx, body.Name, dockertypes.NetworkCreate{
+	ticket, err := h.mgr.Networks().Create(ctx, body.Name, dockertypes.NetworkCreate{
 		Driver: body.Driver,
-	}); err != nil {
+	})
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -45,7 +50,12 @@ func (h *handler) removeNetwork(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Networks().Remove(ctx, id); err != nil {
+	ticket, err := h.mgr.Networks().Remove(ctx, id)
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -57,7 +67,12 @@ func (h *handler) pruneNetworks(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Networks().Prune(ctx, dockerfilters.Args{}); err != nil {
+	ticket, err := h.mgr.Networks().Prune(ctx, dockerfilters.Args{})
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

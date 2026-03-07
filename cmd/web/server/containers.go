@@ -34,7 +34,12 @@ func (h *handler) createContainer(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	cfg := &dockercontainer.Config{Image: body.Image}
-	if _, err := h.mgr.Containers().Create(ctx, body.Name, cfg, nil, nil); err != nil {
+	ticket, err := h.mgr.Containers().Create(ctx, body.Name, cfg, nil, nil)
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -47,7 +52,12 @@ func (h *handler) startContainer(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Containers().Start(ctx, id, dockercontainer.StartOptions{}); err != nil {
+	ticket, err := h.mgr.Containers().Start(ctx, id, dockercontainer.StartOptions{})
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -60,7 +70,12 @@ func (h *handler) stopContainer(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Containers().Stop(ctx, id, dockercontainer.StopOptions{}); err != nil {
+	ticket, err := h.mgr.Containers().Stop(ctx, id, dockercontainer.StopOptions{})
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -73,7 +88,12 @@ func (h *handler) removeContainer(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Containers().Remove(ctx, id, dockercontainer.RemoveOptions{Force: true}); err != nil {
+	ticket, err := h.mgr.Containers().Remove(ctx, id, dockercontainer.RemoveOptions{Force: true})
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

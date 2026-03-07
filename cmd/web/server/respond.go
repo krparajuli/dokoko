@@ -44,6 +44,8 @@ func decode(r *http.Request, v any) error {
 }
 
 // opCtx returns a context with a 30-second timeout for Docker operations.
-func opCtx(r *http.Request) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(r.Context(), 30*time.Second)
+// It is intentionally decoupled from r.Context() so that async workers are
+// not cancelled when the HTTP response is written and the request ends.
+func opCtx(_ *http.Request) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 30*time.Second)
 }

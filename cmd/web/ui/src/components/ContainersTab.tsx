@@ -9,6 +9,12 @@ import InspectModal from './InspectModal.tsx'
 
 type ModalType = 'create' | null
 
+interface PendingAction {
+  type: 'stop' | 'rm'
+  id: string
+  label: string
+}
+
 function stateColor(s: string) {
   if (s === 'running') return 'text-green-600 dark:text-green-400'
   if (s === 'exited')  return 'text-red-600 dark:text-red-400'
@@ -23,6 +29,7 @@ export default function ContainersTab() {
   const [inspectData, setInspectData] = useState<unknown>(null)
   const [selected, setSelected] = useState<Container | null>(null)
   const [toast, setToast] = useState('')
+  const [pending, setPending] = useState<PendingAction | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -53,6 +60,20 @@ export default function ContainersTab() {
     setInspectData(data)
   }
 
+  const confirm = (action: PendingAction) => setPending(action)
+
+  const executeConfirmed = async () => {
+    if (!pending) return
+    setPending(null)
+    if (pending.type === 'stop') await act(() => stopContainer(pending.id), 'Stop dispatched')
+    if (pending.type === 'rm')   await act(() => removeContainer(pending.id), 'Remove dispatched')
+  }
+
+  const containerLabel = (c: Container) => {
+    const name = c.Names?.[0]?.replace(/^\//, '')
+    return name ? `${name} (${c.Id.slice(0, 12)})` : c.Id.slice(0, 12)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
@@ -60,6 +81,29 @@ export default function ContainersTab() {
         <Btn onClick={load} dim>↺ Reload</Btn>
         {toast && <span className="text-green-600 dark:text-green-400 text-xs ml-auto">{toast}</span>}
       </div>
+
+      {pending && (
+        <div className="flex items-center gap-3 px-3 py-2 rounded border border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-950/30 text-xs">
+          <span className="text-zinc-700 dark:text-zinc-300">
+            {pending.type === 'rm'
+              ? <>Remove container <code className="text-yellow-600 dark:text-yellow-400">{pending.label}</code>?</>
+              : <>Stop container <code className="text-yellow-600 dark:text-yellow-400">{pending.label}</code>?</>
+            }
+          </span>
+          <button
+            onClick={executeConfirmed}
+            className={`px-2 py-0.5 rounded font-medium ${pending.type === 'rm' ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-yellow-500 hover:bg-yellow-400 text-white'}`}
+          >
+            {pending.type === 'rm' ? 'Remove' : 'Stop'}
+          </button>
+          <button
+            onClick={() => setPending(null)}
+            className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-collapse">
@@ -89,7 +133,7 @@ export default function ContainersTab() {
                 <Td className="text-zinc-500">{c.Status}</Td>
                 <Td>
                   <div className="flex gap-2">
-                    {c.State !== 'running' && (
+                    {(c.State === 'created' || c.State === 'exited') && (
                       <ActionBtn
                         color="green"
                         onClick={() => act(() => startContainer(c.Id), 'Start dispatched')}
@@ -97,17 +141,17 @@ export default function ContainersTab() {
                         start
                       </ActionBtn>
                     )}
-                    {c.State === 'running' && (
+                    {(c.State === 'running' || c.State === 'paused') && (
                       <ActionBtn
                         color="yellow"
-                        onClick={() => act(() => stopContainer(c.Id), 'Stop dispatched')}
+                        onClick={() => confirm({ type: 'stop', id: c.Id, label: containerLabel(c) })}
                       >
                         stop
                       </ActionBtn>
                     )}
                     <ActionBtn
                       color="red"
-                      onClick={() => act(() => removeContainer(c.Id), 'Remove dispatched')}
+                      onClick={() => confirm({ type: 'rm', id: c.Id, label: containerLabel(c) })}
                     >
                       rm
                     </ActionBtn>

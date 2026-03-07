@@ -31,7 +31,12 @@ func (h *handler) createExec(w http.ResponseWriter, r *http.Request) {
 		AttachStdout: true,
 		AttachStderr: true,
 	}
-	if _, err := h.mgr.Exec().Create(ctx, body.Container, cfg); err != nil {
+	ticket, err := h.mgr.Exec().Create(ctx, body.Container, cfg)
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -51,7 +56,12 @@ func (h *handler) startExec(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Exec().Start(ctx, id, dockertypes.ExecStartCheck{Detach: body.Detach}); err != nil {
+	ticket, err := h.mgr.Exec().Start(ctx, id, dockertypes.ExecStartCheck{Detach: body.Detach})
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

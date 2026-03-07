@@ -30,10 +30,15 @@ func (h *handler) createVolume(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Volumes().Create(ctx, dockervolume.CreateOptions{
+	ticket, err := h.mgr.Volumes().Create(ctx, dockervolume.CreateOptions{
 		Name:   body.Name,
 		Driver: body.Driver,
-	}); err != nil {
+	})
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -46,7 +51,12 @@ func (h *handler) removeVolume(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Volumes().Remove(ctx, name, false); err != nil {
+	ticket, err := h.mgr.Volumes().Remove(ctx, name, false)
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -58,7 +68,12 @@ func (h *handler) pruneVolumes(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Volumes().Prune(ctx, dockerfilters.Args{}); err != nil {
+	ticket, err := h.mgr.Volumes().Prune(ctx, dockerfilters.Args{})
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

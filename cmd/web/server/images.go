@@ -26,7 +26,12 @@ func (h *handler) pullImage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Images().Pull(ctx, body.Ref, dockerimage.PullOptions{Platform: body.Platform}); err != nil {
+	ticket, err := h.mgr.Images().Pull(ctx, body.Ref, dockerimage.PullOptions{Platform: body.Platform})
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -47,7 +52,12 @@ func (h *handler) removeImage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Images().Remove(ctx, body.ID, dockerimage.RemoveOptions{Force: body.Force}); err != nil {
+	ticket, err := h.mgr.Images().Remove(ctx, body.ID, dockerimage.RemoveOptions{Force: body.Force})
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -68,7 +78,12 @@ func (h *handler) tagImage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
-	if _, err := h.mgr.Images().Tag(ctx, body.Source, body.Target); err != nil {
+	ticket, err := h.mgr.Images().Tag(ctx, body.Source, body.Target)
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := ticket.Wait(ctx); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
