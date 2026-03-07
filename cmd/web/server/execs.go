@@ -40,7 +40,12 @@ func (h *handler) createExec(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	jsonAccepted(w, "exec created in container: "+body.Container)
+	execID, err := h.mgr.Exec().ExecDockerID(ticket.ChangeID)
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, "exec created but ID unavailable: "+err.Error())
+		return
+	}
+	jsonOK(w, map[string]string{"exec_id": execID, "container": body.Container})
 }
 
 // startExec starts an exec instance by ID.

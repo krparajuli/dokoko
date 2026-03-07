@@ -327,7 +327,11 @@ func runExecOp(ctx context.Context, mgr *dockermanager.Manager, opIdx int, v fun
 		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
-		return "Exec created in container: " + v(0)
+		execID, err := mgr.Exec().ExecDockerID(ticket.ChangeID)
+		if err != nil {
+			return "Error retrieving exec ID: " + err.Error()
+		}
+		return fmt.Sprintf("Exec created.\nExec ID: %s\n\nUse this ID to Start or Inspect.", execID)
 	case 1: // Start
 		ticket, err := mgr.Exec().Start(ctx, v(0), dockertypes.ExecStartCheck{Detach: true})
 		if err != nil {

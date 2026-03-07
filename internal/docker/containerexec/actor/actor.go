@@ -264,6 +264,21 @@ func (a *Actor) Resize(ctx context.Context, execID string, opts dockercontainer.
 	return a.submit(change, ctx, fn)
 }
 
+// ExecDockerID returns the Docker-assigned exec ID for a settled create change.
+// Call this after the create Ticket.Done is closed.
+// Returns an error if the change is not found or did not succeed.
+func (a *Actor) ExecDockerID(changeID string) (string, error) {
+	status, record, err := a.state.FindByID(changeID)
+	if err != nil {
+		return "", err
+	}
+	if status != dockercontainerexecstate.StatusActive {
+		return "", fmt.Errorf("exec change %s did not succeed (status=%s)", changeID, status)
+	}
+	rec := record.(*dockercontainerexecstate.ActiveRecord)
+	return rec.ExecID, nil
+}
+
 // ── Read-only operations ──────────────────────────────────────────────────────
 
 // Inspect asynchronously inspects the exec instance identified by execID and

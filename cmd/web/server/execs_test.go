@@ -31,12 +31,16 @@ func TestCreateExec_OK(t *testing.T) {
 		"cmd":       "/bin/sh -c 'echo hello'",
 	})))
 
-	assertStatus(t, rec, http.StatusAccepted)
+	assertStatus(t, rec, http.StatusOK)
 	if gotContainer != "my-container" {
 		t.Errorf("container: got %q, want my-container", gotContainer)
 	}
 	if len(gotCmd) == 0 {
 		t.Error("expected non-empty cmd slice")
+	}
+	resp := parseResp(t, rec)
+	if !containsStr(string(resp.Data), "exec_id") {
+		t.Errorf("response missing exec_id: %s", resp.Data)
 	}
 }
 
@@ -56,7 +60,7 @@ func TestCreateExec_DefaultsToShell(t *testing.T) {
 		"cmd":       "",
 	})))
 
-	assertStatus(t, rec, http.StatusAccepted)
+	assertStatus(t, rec, http.StatusOK)
 	if len(gotCmd) == 0 || gotCmd[0] != "/bin/sh" {
 		t.Errorf("expected default cmd [/bin/sh], got %v", gotCmd)
 	}

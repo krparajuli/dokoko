@@ -296,9 +296,10 @@ func (f *fakeNetworkClerk) Inspect(ctx context.Context, id string, opts dockerty
 // ── fakeExecActor ─────────────────────────────────────────────────────────────
 
 type fakeExecActor struct {
-	createFn  func(ctx context.Context, containerID string, cfg dockertypes.ExecConfig) (*dockerexecactor.Ticket, error)
-	startFn   func(ctx context.Context, execID string, cfg dockertypes.ExecStartCheck) (*dockerexecactor.Ticket, error)
-	inspectFn func(ctx context.Context, execID string) <-chan dockerexecactor.InspectResult
+	createFn       func(ctx context.Context, containerID string, cfg dockertypes.ExecConfig) (*dockerexecactor.Ticket, error)
+	execDockerIDFn func(changeID string) (string, error)
+	startFn        func(ctx context.Context, execID string, cfg dockertypes.ExecStartCheck) (*dockerexecactor.Ticket, error)
+	inspectFn      func(ctx context.Context, execID string) <-chan dockerexecactor.InspectResult
 }
 
 func (f *fakeExecActor) Create(ctx context.Context, containerID string, cfg dockertypes.ExecConfig) (*dockerexecactor.Ticket, error) {
@@ -306,6 +307,13 @@ func (f *fakeExecActor) Create(ctx context.Context, containerID string, cfg dock
 		return f.createFn(ctx, containerID, cfg)
 	}
 	return closedExecTicket("chg-create"), nil
+}
+
+func (f *fakeExecActor) ExecDockerID(changeID string) (string, error) {
+	if f.execDockerIDFn != nil {
+		return f.execDockerIDFn(changeID)
+	}
+	return "fake-exec-id-" + changeID, nil
 }
 
 func (f *fakeExecActor) Start(ctx context.Context, execID string, cfg dockertypes.ExecStartCheck) (*dockerexecactor.Ticket, error) {

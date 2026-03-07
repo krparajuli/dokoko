@@ -72,6 +72,7 @@ type networkClerk interface {
 // execActor is the subset of *dockerexecactor.Actor used by exec handlers.
 type execActor interface {
 	Create(ctx context.Context, containerID string, config dockertypes.ExecConfig) (*dockerexecactor.Ticket, error)
+	ExecDockerID(changeID string) (string, error)
 	Start(ctx context.Context, execID string, config dockertypes.ExecStartCheck) (*dockerexecactor.Ticket, error)
 	Inspect(ctx context.Context, execID string) <-chan dockerexecactor.InspectResult
 }

@@ -54,7 +54,7 @@ export const refreshNetworks = () => post('/networks/refresh')
 export const inspectNetwork = (id: string) => get(`/networks/${encodeURIComponent(id)}/inspect`)
 
 // ── Execs ─────────────────────────────────────────────────────────────────────
-export const createExec  = (container: string, cmd: string) => post('/execs', { container, cmd })
+export const createExec  = (container: string, cmd: string) => post<{ exec_id: string; container: string }>('/execs', { container, cmd })
 export const startExec   = (id: string, detach = true) => post(`/execs/${id}/start`, { detach })
 export const inspectExec = (id: string) => get(`/execs/${id}/inspect`)
 
