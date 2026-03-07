@@ -6,6 +6,7 @@ export interface Field {
   placeholder?: string
   required?: boolean
   defaultValue?: string
+  type?: 'text' | 'checkbox'
 }
 
 interface Props {
@@ -48,17 +49,33 @@ export default function OpModal({ title, fields, onSubmit, onClose }: Props) {
         <form onSubmit={handleSubmit} className="space-y-3">
           {fields.map((field) => (
             <div key={field.key}>
-              <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">{field.label}</label>
-              <input
-                type="text"
-                value={values[field.key] ?? ''}
-                onChange={(e) =>
-                  setValues((v) => ({ ...v, [field.key]: e.target.value }))
-                }
-                placeholder={field.placeholder}
-                required={field.required}
-                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:border-green-500"
-              />
+              {field.type === 'checkbox' ? (
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={values[field.key] !== 'false'}
+                    onChange={(e) =>
+                      setValues((v) => ({ ...v, [field.key]: e.target.checked ? 'true' : 'false' }))
+                    }
+                    className="w-4 h-4 accent-green-600"
+                  />
+                  <span className="text-sm text-zinc-700 dark:text-zinc-300">{field.label}</span>
+                </label>
+              ) : (
+                <>
+                  <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">{field.label}</label>
+                  <input
+                    type="text"
+                    value={values[field.key] ?? ''}
+                    onChange={(e) =>
+                      setValues((v) => ({ ...v, [field.key]: e.target.value }))
+                    }
+                    placeholder={field.placeholder}
+                    required={field.required}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:border-green-500"
+                  />
+                </>
+              )}
             </div>
           ))}
 

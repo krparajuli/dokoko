@@ -61,8 +61,9 @@ var tabNames = [5]string{"Images", "Containers", "Volumes", "Networks", "Execs"}
 // ── Operation definitions ─────────────────────────────────────────────────────
 
 type inputDesc struct {
-	label    string
-	required bool
+	label        string
+	required     bool
+	defaultValue string
 }
 
 type opDef struct {
@@ -73,41 +74,41 @@ type opDef struct {
 
 var tabOps = [5][]opDef{
 	tabImages: {
-		{name: "Pull",    key: "p", inputs: []inputDesc{{"Image ref (e.g. ubuntu:22.04)", true}, {"Platform (optional)", false}}},
-		{name: "Remove",  key: "d", inputs: []inputDesc{{"Image ID or ref", true}}},
-		{name: "Tag",     key: "t", inputs: []inputDesc{{"Source", true}, {"Target tag", true}}},
+		{name: "Pull",    key: "p", inputs: []inputDesc{{label: "Image ref (e.g. ubuntu:22.04)", required: true}, {label: "Platform (optional)"}}},
+		{name: "Remove",  key: "d", inputs: []inputDesc{{label: "Image ID or ref", required: true}}},
+		{name: "Tag",     key: "t", inputs: []inputDesc{{label: "Source", required: true}, {label: "Target tag", required: true}}},
 		{name: "List",    key: "L", inputs: nil},
-		{name: "Inspect", key: "i", inputs: []inputDesc{{"Image ID or ref", true}}},
+		{name: "Inspect", key: "i", inputs: []inputDesc{{label: "Image ID or ref", required: true}}},
 		{name: "Refresh", key: "f", inputs: nil},
 	},
 	tabContainers: {
-		{name: "Create",  key: "c", inputs: []inputDesc{{"Image", true}, {"Name (optional)", false}}},
-		{name: "Start",   key: "S", inputs: []inputDesc{{"Container ID/name", true}}},
-		{name: "Stop",    key: "X", inputs: []inputDesc{{"Container ID/name", true}}},
-		{name: "Remove",  key: "d", inputs: []inputDesc{{"Container ID/name", true}}},
+		{name: "Create",  key: "c", inputs: []inputDesc{{label: "Image", required: true}, {label: "Name (optional)"}, {label: "Run detached? (y/n)", defaultValue: "y"}}},
+		{name: "Start",   key: "S", inputs: []inputDesc{{label: "Container ID/name", required: true}}},
+		{name: "Stop",    key: "X", inputs: []inputDesc{{label: "Container ID/name", required: true}}},
+		{name: "Remove",  key: "d", inputs: []inputDesc{{label: "Container ID/name", required: true}}},
 		{name: "List",    key: "L", inputs: nil},
-		{name: "Inspect", key: "i", inputs: []inputDesc{{"Container ID/name", true}}},
+		{name: "Inspect", key: "i", inputs: []inputDesc{{label: "Container ID/name", required: true}}},
 	},
 	tabVolumes: {
-		{name: "Create",  key: "c", inputs: []inputDesc{{"Volume name", true}, {"Driver (optional)", false}}},
-		{name: "Remove",  key: "d", inputs: []inputDesc{{"Volume name", true}}},
+		{name: "Create",  key: "c", inputs: []inputDesc{{label: "Volume name", required: true}, {label: "Driver (optional)"}}},
+		{name: "Remove",  key: "d", inputs: []inputDesc{{label: "Volume name", required: true}}},
 		{name: "Prune",   key: "P", inputs: nil},
 		{name: "List",    key: "L", inputs: nil},
-		{name: "Inspect", key: "i", inputs: []inputDesc{{"Volume name", true}}},
+		{name: "Inspect", key: "i", inputs: []inputDesc{{label: "Volume name", required: true}}},
 		{name: "Refresh", key: "f", inputs: nil},
 	},
 	tabNetworks: {
-		{name: "Create",  key: "c", inputs: []inputDesc{{"Network name", true}, {"Driver (optional)", false}}},
-		{name: "Remove",  key: "d", inputs: []inputDesc{{"Network ID/name", true}}},
+		{name: "Create",  key: "c", inputs: []inputDesc{{label: "Network name", required: true}, {label: "Driver (optional)"}}},
+		{name: "Remove",  key: "d", inputs: []inputDesc{{label: "Network ID/name", required: true}}},
 		{name: "Prune",   key: "P", inputs: nil},
 		{name: "List",    key: "L", inputs: nil},
-		{name: "Inspect", key: "i", inputs: []inputDesc{{"Network ID/name", true}}},
+		{name: "Inspect", key: "i", inputs: []inputDesc{{label: "Network ID/name", required: true}}},
 		{name: "Refresh", key: "f", inputs: nil},
 	},
 	tabExecs: {
-		{name: "Create",  key: "c", inputs: []inputDesc{{"Container ID", true}, {"Command", true}}},
-		{name: "Start",   key: "S", inputs: []inputDesc{{"Exec ID", true}}},
-		{name: "Inspect", key: "i", inputs: []inputDesc{{"Exec ID", true}}},
+		{name: "Create",  key: "c", inputs: []inputDesc{{label: "Container ID", required: true}, {label: "Command", required: true}}},
+		{name: "Start",   key: "S", inputs: []inputDesc{{label: "Exec ID", required: true}}},
+		{name: "Inspect", key: "i", inputs: []inputDesc{{label: "Exec ID", required: true}}},
 	},
 }
 
@@ -161,6 +162,9 @@ func makeInputs(descs []inputDesc, width int) []textinput.Model {
 		ti := textinput.New()
 		ti.Width = max(width-6, 10)
 		ti.Placeholder = d.label
+		if d.defaultValue != "" {
+			ti.SetValue(d.defaultValue)
+		}
 		models[i] = ti
 	}
 	return models

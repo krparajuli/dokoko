@@ -1,7 +1,9 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
+	"time"
 
 	dockercontainer "github.com/docker/docker/api/types/container"
 )
@@ -20,21 +22,27 @@ func (h *handler) listContainers(w http.ResponseWriter, r *http.Request) {
 }
 
 // createContainer creates a container from an image.
-// Body: {"image":"nginx","name":"my-nginx"}
+// Body: {"image":"nginx","name":"my-nginx","run":true}
+// When run is true the container is also started detached after creation.
 func (h *handler) createContainer(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Image string `json:"image"`
 		Name  string `json:"name"`
+		Run   bool   `json:"run"`
 	}
 	if err := decode(r, &body); err != nil || body.Image == "" {
 		jsonErr(w, http.StatusBadRequest, "image is required")
 		return
 	}
+	name := body.Name
+	if name == "" && body.Run {
+		name = fmt.Sprintf("run-%d", time.Now().UnixMilli())
+	}
 	ctx, cancel := opCtx(r)
 	defer cancel()
 
 	cfg := &dockercontainer.Config{Image: body.Image}
-	ticket, err := h.mgr.Containers().Create(ctx, body.Name, cfg, nil, nil)
+	ticket, err := h.mgr.Containers().Create(ctx, name, cfg, nil, nil)
 	if err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -43,7 +51,20 @@ func (h *handler) createContainer(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	jsonAccepted(w, "container created (image="+body.Image+" name="+body.Name+")")
+	if !body.Run {
+		jsonAccepted(w, "container created (image="+body.Image+" name="+name+")")
+		return
+	}
+	startTicket, err := h.mgr.Containers().Start(ctx, name, dockercontainer.StartOptions{})
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, "container created but start failed: "+err.Error())
+		return
+	}
+	if err := startTicket.Wait(ctx); err != nil {
+		jsonErr(w, http.StatusInternalServerError, "container created but start failed: "+err.Error())
+		return
+	}
+	jsonAccepted(w, "container created and started (image="+body.Image+" name="+name+")")
 }
 
 // startContainer starts a stopped container.

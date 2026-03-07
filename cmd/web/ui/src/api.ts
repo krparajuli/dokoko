@@ -31,7 +31,7 @@ export const inspectImage  = (id: string) => get(`/images/${encodeURIComponent(i
 
 // ── Containers ───────────────────────────────────────────────────────────────
 export const listContainers   = () => get('/containers')
-export const createContainer  = (image: string, name: string) => post('/containers', { image, name })
+export const createContainer  = (image: string, name: string, run = true) => post('/containers', { image, name, run })
 export const startContainer   = (id: string) => post(`/containers/${id}/start`)
 export const stopContainer    = (id: string) => post(`/containers/${id}/stop`)
 export const removeContainer  = (id: string) => del(`/containers/${id}`)

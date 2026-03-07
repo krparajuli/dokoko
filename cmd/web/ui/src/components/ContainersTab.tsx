@@ -170,8 +170,9 @@ export default function ContainersTab() {
           fields={[
             { key: 'image', label: 'Image', required: true, placeholder: 'nginx:latest' },
             { key: 'name', label: 'Container name (optional)', placeholder: 'my-container' },
+            { key: 'run', label: 'Run detached', type: 'checkbox', defaultValue: 'true' },
           ]}
-          onSubmit={async (v) => { await createContainer(v.image!, v.name ?? ''); await load() }}
+          onSubmit={async (v) => { await createContainer(v.image!, v.name ?? '', v.run !== 'false'); await load() }}
           onClose={() => setModal(null)}
         />
       )}

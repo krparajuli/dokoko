@@ -112,15 +112,30 @@ func runImageOp(ctx context.Context, mgr *dockermanager.Manager, opIdx int, v fu
 func runContainerOp(ctx context.Context, mgr *dockermanager.Manager, opIdx int, v func(int) string) string {
 	switch opIdx {
 	case 0: // Create
+		name := v(1)
+		runDetached := strings.ToLower(strings.TrimSpace(v(2))) != "n"
+		if name == "" && runDetached {
+			name = fmt.Sprintf("run-%d", time.Now().UnixMilli())
+		}
 		cfg := &dockercontainer.Config{Image: v(0)}
-		ticket, err := mgr.Containers().Create(ctx, v(1), cfg, nil, nil)
+		ticket, err := mgr.Containers().Create(ctx, name, cfg, nil, nil)
 		if err != nil {
 			return "Error: " + err.Error()
 		}
 		if err := ticket.Wait(ctx); err != nil {
 			return "Error: " + err.Error()
 		}
-		return fmt.Sprintf("Container created (image=%s name=%s)", v(0), v(1))
+		if !runDetached {
+			return fmt.Sprintf("Container created (image=%s name=%s)", v(0), name)
+		}
+		startTicket, err := mgr.Containers().Start(ctx, name, dockercontainer.StartOptions{})
+		if err != nil {
+			return fmt.Sprintf("Container created but start failed: %v", err)
+		}
+		if err := startTicket.Wait(ctx); err != nil {
+			return fmt.Sprintf("Container created but start failed: %v", err)
+		}
+		return fmt.Sprintf("Container created and started (image=%s name=%s)", v(0), name)
 	case 1: // Start
 		ticket, err := mgr.Containers().Start(ctx, v(0), dockercontainer.StartOptions{})
 		if err != nil {
