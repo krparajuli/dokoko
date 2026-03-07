@@ -1,0 +1,87 @@
+package server
+
+import (
+	"net/http"
+	"os"
+	"path/filepath"
+)
+
+func (s *Server) routes(uiDir string) http.Handler {
+	mux := http.NewServeMux()
+	h := &handler{mgr: s.mgr, log: s.log}
+
+	// Health / connection
+	mux.HandleFunc("GET /api/health", h.health)
+
+	// Images
+	mux.HandleFunc("GET /api/images", h.listImages)
+	mux.HandleFunc("POST /api/images/pull", h.pullImage)
+	mux.HandleFunc("POST /api/images/remove", h.removeImage)
+	mux.HandleFunc("POST /api/images/tag", h.tagImage)
+	mux.HandleFunc("POST /api/images/refresh", h.refreshImages)
+	mux.HandleFunc("GET /api/images/{id}/inspect", h.inspectImage)
+
+	// Containers
+	mux.HandleFunc("GET /api/containers", h.listContainers)
+	mux.HandleFunc("POST /api/containers", h.createContainer)
+	mux.HandleFunc("POST /api/containers/{id}/start", h.startContainer)
+	mux.HandleFunc("POST /api/containers/{id}/stop", h.stopContainer)
+	mux.HandleFunc("DELETE /api/containers/{id}", h.removeContainer)
+	mux.HandleFunc("GET /api/containers/{id}/inspect", h.inspectContainer)
+
+	// Volumes
+	mux.HandleFunc("GET /api/volumes", h.listVolumes)
+	mux.HandleFunc("POST /api/volumes", h.createVolume)
+	mux.HandleFunc("DELETE /api/volumes/{name}", h.removeVolume)
+	mux.HandleFunc("POST /api/volumes/prune", h.pruneVolumes)
+	mux.HandleFunc("POST /api/volumes/refresh", h.refreshVolumes)
+	mux.HandleFunc("GET /api/volumes/{name}/inspect", h.inspectVolume)
+
+	// Networks
+	mux.HandleFunc("GET /api/networks", h.listNetworks)
+	mux.HandleFunc("POST /api/networks", h.createNetwork)
+	mux.HandleFunc("DELETE /api/networks/{id}", h.removeNetwork)
+	mux.HandleFunc("POST /api/networks/prune", h.pruneNetworks)
+	mux.HandleFunc("POST /api/networks/refresh", h.refreshNetworks)
+	mux.HandleFunc("GET /api/networks/{id}/inspect", h.inspectNetwork)
+
+	// Execs
+	mux.HandleFunc("POST /api/execs", h.createExec)
+	mux.HandleFunc("POST /api/execs/{id}/start", h.startExec)
+	mux.HandleFunc("GET /api/execs/{id}/inspect", h.inspectExec)
+
+	// State (all subsystems)
+	mux.HandleFunc("GET /api/state", h.getState)
+
+	// SSE log stream
+	mux.HandleFunc("GET /api/logs/stream", s.streamLogs)
+
+	// Static UI files
+	dir := resolveUIDir(uiDir)
+	if dir != "" {
+		mux.Handle("/", http.FileServer(http.Dir(dir)))
+	}
+
+	return cors(mux)
+}
+
+// resolveUIDir returns the UI dist directory path.
+// Tries uiDir hint first, then looks for ui/dist relative to cwd.
+func resolveUIDir(hint string) string {
+	if hint != "" {
+		if _, err := os.Stat(hint); err == nil {
+			return hint
+		}
+	}
+	// Try relative to cwd (works when running from cmd/web/)
+	candidates := []string{
+		"ui/dist",
+		filepath.Join("cmd", "web", "ui", "dist"),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return ""
+}
