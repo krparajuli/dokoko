@@ -124,10 +124,11 @@ func (s *State) RequestChange(op Operation, tags string, meta map[string]string)
 
 	s.mu.Lock()
 	s.requested = append(s.requested, c)
+	n := len(s.requested)
 	s.mu.Unlock()
 
 	s.log.Debug("change registered: id=%s op=%s tags=%q (requested=%d)",
-		id, op, tags, len(s.requested))
+		id, op, tags, n)
 	s.log.Info("build change requested: %s (%s)", op, tags)
 	return c
 }
