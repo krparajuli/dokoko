@@ -115,8 +115,9 @@ func (m model) renderHeader() string {
 
 	var tabs []string
 	for i, name := range tabNames {
-		label := fmt.Sprintf(" %d:%s ", i+1, name)
-		tabs = append(tabs, tabStyle(m.activeTab == i, tabColors[i]).Render(label))
+		label := fmt.Sprintf("%d:%s", i+1, name)
+		inner := tabStyle(m.activeTab == i, tabColors[i]).Render(label)
+		tabs = append(tabs, " "+inner+" ")
 	}
 
 	tabBar := strings.Join(tabs, dimStyle.Render("·"))

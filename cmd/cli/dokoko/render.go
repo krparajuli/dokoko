@@ -125,7 +125,7 @@ func (m model) renderStoreContent() string {
 		sort.Slice(records, func(i, j int) bool {
 			return records[i].UpdatedAt.After(records[j].UpdatedAt)
 		})
-		sb.WriteString(dimStyle.Render(fmt.Sprintf("total: %d images\n\n", len(records))))
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("total: %d images", len(records))) + "\n\n")
 		for _, r := range records {
 			status := statusStyle(string(r.Status))
 			tags := strings.Join(r.RepoTags, ", ")
@@ -143,7 +143,7 @@ func (m model) renderStoreContent() string {
 		sort.Slice(records, func(i, j int) bool {
 			return records[i].UpdatedAt.After(records[j].UpdatedAt)
 		})
-		sb.WriteString(dimStyle.Render(fmt.Sprintf("total: %d volumes\n\n", len(records))))
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("total: %d volumes", len(records))) + "\n\n")
 		for _, r := range records {
 			status := statusStyle(string(r.Status))
 			sb.WriteString(fmt.Sprintf("  %s  %-30s  %s\n",
@@ -154,7 +154,7 @@ func (m model) renderStoreContent() string {
 		sort.Slice(records, func(i, j int) bool {
 			return records[i].UpdatedAt.After(records[j].UpdatedAt)
 		})
-		sb.WriteString(dimStyle.Render(fmt.Sprintf("total: %d networks\n\n", len(records))))
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("total: %d networks", len(records))) + "\n\n")
 		for _, r := range records {
 			status := statusStyle(string(r.Status))
 			sb.WriteString(fmt.Sprintf("  %s  %-14s  %-25s  %s\n",

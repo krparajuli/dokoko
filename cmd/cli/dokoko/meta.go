@@ -139,11 +139,10 @@ var (
 )
 
 func tabStyle(active bool, color lipgloss.Color) lipgloss.Style {
-	s := lipgloss.NewStyle().Padding(0, 2)
 	if active {
-		return s.Bold(true).Foreground(color).Underline(true)
+		return lipgloss.NewStyle().Bold(true).Foreground(color).Underline(true)
 	}
-	return s.Foreground(colorGray)
+	return dimStyle
 }
 
 func paneStyle(focused bool, color lipgloss.Color) lipgloss.Style {
