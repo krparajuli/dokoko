@@ -63,6 +63,10 @@ import (
 	portproxyclerk "dokoko.ai/dokoko/internal/portproxy/clerk"
 	portproxyops "dokoko.ai/dokoko/internal/portproxy/ops"
 	portproxystate "dokoko.ai/dokoko/internal/portproxy/state"
+	proxyportmapactor "dokoko.ai/dokoko/internal/proxyportmap/actor"
+	proxyportmapclerk "dokoko.ai/dokoko/internal/proxyportmap/clerk"
+	proxyportmapops "dokoko.ai/dokoko/internal/proxyportmap/ops"
+	proxyportmapstate "dokoko.ai/dokoko/internal/proxyportmap/state"
 	webcontainersactor "dokoko.ai/dokoko/internal/webcontainers/actor"
 	webcontainersclerk "dokoko.ai/dokoko/internal/webcontainers/clerk"
 	webcontainersops "dokoko.ai/dokoko/internal/webcontainers/ops"
@@ -123,6 +127,12 @@ type Manager struct {
 	webContainersStore *webcontainersstate.Store
 	webContainersActor *webcontainersactor.Actor
 	webContainers      *webcontainersclerk.Clerk
+
+	// ProxyPortMap subsystem: store survives reconnects; actor+clerk recreated.
+	proxyPortMapState *proxyportmapstate.State
+	proxyPortMapStore *proxyportmapstate.Store
+	proxyPortMapActor *proxyportmapactor.Actor
+	proxyPortMap      *proxyportmapclerk.Clerk
 }
 
 // New creates a Manager, establishes the initial Docker connection, starts all
@@ -152,6 +162,9 @@ func New(ctx context.Context, log *logger.Logger, opts ...dockerclient.Opt) (*Ma
 
 		webContainersState: webcontainersstate.New(log),
 		webContainersStore: webcontainersstate.NewStore(log),
+
+		proxyPortMapState: proxyportmapstate.New(log),
+		proxyPortMapStore: proxyportmapstate.NewStore(log),
 	}
 
 	if err := m.connect(ctx); err != nil {
@@ -313,6 +326,14 @@ func (m *Manager) WebContainers() *webcontainersclerk.Clerk {
 	return m.webContainers
 }
 
+// ProxyPortMap returns the proxyportmap Clerk.
+// ScanAndMap, Unmap, GetResult.
+func (m *Manager) ProxyPortMap() *proxyportmapclerk.Clerk {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.proxyPortMap
+}
+
 // ── State accessors ───────────────────────────────────────────────────────────
 
 // ImageState returns the image operation state machine. Preserved across reconnects.
@@ -408,6 +429,11 @@ func (m *Manager) connect(ctx context.Context) error {
 	m.webContainersActor = webcontainersactor.New(wcOps, m.webContainersState, m.webContainersStore, m.log, nil)
 	m.webContainers = webcontainersclerk.New(m.webContainersActor, m.webContainersState, m.webContainersStore, m.log)
 
+	// Set up proxyportmap subsystem.
+	ppmOps := proxyportmapops.New(conn, m.log)
+	m.proxyPortMapActor = proxyportmapactor.New(ppmOps, m.portProxy, m.proxyPortMapState, m.proxyPortMapStore, m.log, nil)
+	m.proxyPortMap = proxyportmapclerk.New(m.proxyPortMapActor, m.proxyPortMapState, m.proxyPortMapStore, m.log)
+
 	return nil
 }
 
@@ -467,6 +493,13 @@ func (m *Manager) shutdown() {
 	if m.webContainersActor != nil {
 		m.webContainersActor.Close()
 		m.webContainersActor = nil
+	}
+
+	// Shut down proxyportmap subsystem.
+	m.proxyPortMap = nil
+	if m.proxyPortMapActor != nil {
+		m.proxyPortMapActor.Close()
+		m.proxyPortMapActor = nil
 	}
 
 	m.log.Debug("manager: all subsystems shut down")

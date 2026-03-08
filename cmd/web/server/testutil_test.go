@@ -369,6 +369,7 @@ func (f *fakeManager) Networks() networkClerk              { return f.networks }
 func (f *fakeManager) Exec() execActor                     { return f.exec }
 func (f *fakeManager) PortProxy() portProxyClerk           { return nil }
 func (f *fakeManager) WebContainers() webContainersClerk   { return nil }
+func (f *fakeManager) ProxyPortMap() proxyPortMapClerk     { return nil }
 func (f *fakeManager) ImageState() stateSummarizer         { return f.summ }
 func (f *fakeManager) ContainerState() stateSummarizer     { return f.summ }
 func (f *fakeManager) VolumeState() stateSummarizer        { return f.summ }

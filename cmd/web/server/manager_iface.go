@@ -21,6 +21,8 @@ import (
 	dockervolumestate "dokoko.ai/dokoko/internal/docker/volumes/state"
 	portproxyactor "dokoko.ai/dokoko/internal/portproxy/actor"
 	portproxystate "dokoko.ai/dokoko/internal/portproxy/state"
+	proxyportmapactor "dokoko.ai/dokoko/internal/proxyportmap/actor"
+	proxyportmapstate "dokoko.ai/dokoko/internal/proxyportmap/state"
 	webcontainersactor "dokoko.ai/dokoko/internal/webcontainers/actor"
 	webcontainerscatalog "dokoko.ai/dokoko/internal/webcontainers/catalog"
 	webcontainersstate "dokoko.ai/dokoko/internal/webcontainers/state"
@@ -102,6 +104,13 @@ type webContainersClerk interface {
 	Catalog() []*webcontainerscatalog.ImageDef
 }
 
+// proxyPortMapClerk is the subset of *proxyportmapclerk.Clerk used by port-map handlers.
+type proxyPortMapClerk interface {
+	ScanAndMap(ctx context.Context, userID, containerName, containerID string) (*proxyportmapactor.Ticket, error)
+	Unmap(ctx context.Context, userID string) (*proxyportmapactor.Ticket, error)
+	GetResult(userID string) *proxyportmapstate.ScanResult
+}
+
 // ── Top-level Manager interface ───────────────────────────────────────────────
 
 // Manager is the complete interface the handler depends on.
@@ -116,6 +125,7 @@ type Manager interface {
 	Exec() execActor
 	PortProxy() portProxyClerk
 	WebContainers() webContainersClerk
+	ProxyPortMap() proxyPortMapClerk
 	ImageState() stateSummarizer
 	ContainerState() stateSummarizer
 	VolumeState() stateSummarizer
@@ -141,6 +151,7 @@ func (a *managerAdapter) Networks() networkClerk            { return a.m.Network
 func (a *managerAdapter) Exec() execActor                   { return a.m.Exec() }
 func (a *managerAdapter) PortProxy() portProxyClerk           { return a.m.PortProxy() }
 func (a *managerAdapter) WebContainers() webContainersClerk   { return a.m.WebContainers() }
+func (a *managerAdapter) ProxyPortMap() proxyPortMapClerk     { return a.m.ProxyPortMap() }
 func (a *managerAdapter) ImageState() stateSummarizer         { return a.m.ImageState() }
 func (a *managerAdapter) ContainerState() stateSummarizer   { return a.m.ContainerState() }
 func (a *managerAdapter) VolumeState() stateSummarizer      { return a.m.VolumeState() }

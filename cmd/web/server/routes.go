@@ -58,6 +58,11 @@ func (s *Server) routes(uiDir string) http.Handler {
 	// Subtree pattern — catches all ttyd sub-paths (assets, /ws, /token).
 	mux.HandleFunc("/api/webcontainers/terminal/{user_id}/", h.proxyWebTerminal)
 
+	// ProxyPortMap (dynamic port scanning + proxy registration)
+	mux.HandleFunc("POST /api/proxyportmap/scan", h.scanPorts)
+	mux.HandleFunc("GET /api/proxyportmap/mappings/{user_id}", h.getMappings)
+	mux.HandleFunc("DELETE /api/proxyportmap/mappings/{user_id}", h.unmapPorts)
+
 	// State (all subsystems)
 	mux.HandleFunc("GET /api/state", h.getState)
 

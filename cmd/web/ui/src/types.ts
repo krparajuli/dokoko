@@ -119,3 +119,18 @@ export interface WebSession {
   error?: string
   terminal_path?: string
 }
+
+// ── ProxyPortMap ───────────────────────────────────────────────────────────
+
+export interface MappedPort {
+  container_port: number
+  host_port: number
+  url: string
+}
+
+export interface PortScanResult {
+  user_id: string
+  container_name: string
+  ports: MappedPort[]
+  scanned_at: string
+}

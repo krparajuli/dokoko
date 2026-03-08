@@ -69,3 +69,11 @@ export const getWebSession    = (user_id: string) =>
   get(`/webcontainers/session/${encodeURIComponent(user_id)}`)
 export const terminateWeb     = (user_id: string) =>
   del(`/webcontainers/session/${encodeURIComponent(user_id)}`)
+
+// ── ProxyPortMap ──────────────────────────────────────────────────────────────
+export const scanPorts        = (user_id: string) =>
+  post('/proxyportmap/scan', { user_id })
+export const getPortMappings  = (user_id: string) =>
+  get(`/proxyportmap/mappings/${encodeURIComponent(user_id)}`)
+export const removePortMappings = (user_id: string) =>
+  del(`/proxyportmap/mappings/${encodeURIComponent(user_id)}`)

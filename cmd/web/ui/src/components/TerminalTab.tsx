@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { listWebCatalog, provisionWeb, getWebSession, terminateWeb } from '../api.ts'
-import type { CatalogEntry, WebSession } from '../types.ts'
+import { listWebCatalog, provisionWeb, getWebSession, terminateWeb, scanPorts, getPortMappings, removePortMappings } from '../api.ts'
+import type { CatalogEntry, WebSession, PortScanResult } from '../types.ts'
 
 // ── User-ID helpers ───────────────────────────────────────────────────────────
 
@@ -25,9 +25,11 @@ export default function TerminalTab() {
   const [loading, setLoading]     = useState(true)
   const [working, setWorking]     = useState(false)
   const [toast, setToast]         = useState('')
-  const [ttydReady, setTtydReady] = useState(false)
-  const pollRef                   = useRef<number | null>(null)
-  const ttydPollRef               = useRef<number | null>(null)
+  const [ttydReady, setTtydReady]     = useState(false)
+  const [portScan, setPortScan]       = useState<PortScanResult | null>(null)
+  const [scanning, setScanning]       = useState(false)
+  const pollRef                       = useRef<number | null>(null)
+  const ttydPollRef                   = useRef<number | null>(null)
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -94,9 +96,10 @@ export default function TerminalTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.status, session?.terminal_path, session?.container_id, ttydReady])
 
-  // Reset ttydReady whenever the container changes so the next session re-polls.
+  // Reset ttydReady and portScan whenever the container changes.
   useEffect(() => {
     setTtydReady(false)
+    setPortScan(null)
   }, [session?.container_id])
 
   // ── Load catalog + check existing session on mount ────────────────────────
@@ -149,11 +152,39 @@ export default function TerminalTab() {
       await terminateWeb(userID)
       setSession(null)
       setTtydReady(false)
+      setPortScan(null)
       notify('Session terminated')
     } catch (e: unknown) {
       notify('Terminate failed: ' + (e instanceof Error ? e.message : String(e)))
     } finally {
       setWorking(false)
+    }
+  }
+
+  const handleScanPorts = async () => {
+    setScanning(true)
+    try {
+      await scanPorts(userID)
+      const result = await getPortMappings(userID) as PortScanResult
+      setPortScan(result)
+      notify('Port scan complete')
+    } catch (e: unknown) {
+      notify('Scan failed: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  const handleUnmapPorts = async () => {
+    setScanning(true)
+    try {
+      await removePortMappings(userID)
+      setPortScan(null)
+      notify('Ports unmapped')
+    } catch (e: unknown) {
+      notify('Unmap failed: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setScanning(false)
     }
   }
 
@@ -288,6 +319,52 @@ export default function TerminalTab() {
                 title="Web Terminal"
                 allow="clipboard-read; clipboard-write"
               />
+            </div>
+          )}
+
+          {/* Port scanning */}
+          {ttydReady && (
+            <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={scanning || working}
+                  onClick={handleScanPorts}
+                  className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {scanning ? 'Scanning…' : '⚡ Scan Ports'}
+                </button>
+                {portScan && portScan.ports.length > 0 && (
+                  <button
+                    disabled={scanning || working}
+                    onClick={handleUnmapPorts}
+                    className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Unmap
+                  </button>
+                )}
+              </div>
+              {portScan && portScan.ports.length > 0 && (
+                <div className="space-y-1">
+                  {portScan.ports.map((p) => (
+                    <div key={p.container_port} className="flex items-center gap-3 text-xs">
+                      <span className="text-zinc-400 dark:text-zinc-500 font-mono">
+                        :{p.container_port} → :{p.host_port}
+                      </span>
+                      <a
+                        href={p.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-cyan-600 dark:text-cyan-400 hover:underline font-mono"
+                      >
+                        {p.url}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {portScan && portScan.ports.length === 0 && (
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">No listening ports found.</p>
+              )}
             </div>
           )}
         </div>
