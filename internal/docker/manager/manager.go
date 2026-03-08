@@ -34,6 +34,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"dokoko.ai/dokoko/internal/docker"
 	dockerbuildactor "dokoko.ai/dokoko/internal/docker/builds/actor"
@@ -58,6 +59,10 @@ import (
 	dockervolumeactor "dokoko.ai/dokoko/internal/docker/volumes/actor"
 	dockervolumeops "dokoko.ai/dokoko/internal/docker/volumes/ops"
 	dockervolumestate "dokoko.ai/dokoko/internal/docker/volumes/state"
+	portproxyactor "dokoko.ai/dokoko/internal/portproxy/actor"
+	portproxyclerk "dokoko.ai/dokoko/internal/portproxy/clerk"
+	portproxyops "dokoko.ai/dokoko/internal/portproxy/ops"
+	portproxystate "dokoko.ai/dokoko/internal/portproxy/state"
 	"dokoko.ai/dokoko/pkg/logger"
 	dockerclient "github.com/docker/docker/client"
 )
@@ -102,6 +107,12 @@ type Manager struct {
 	// Recreated on every connect.
 	containers *dockercontaineractor.Actor
 	exec       *dockerexecactor.Actor
+
+	// Port-proxy subsystem: state+store survive reconnects; actor+clerk recreated.
+	portproxyState *portproxystate.State
+	portproxyStore *portproxystate.Store
+	portproxyActor *portproxyactor.Actor
+	portProxy      *portproxyclerk.Clerk
 }
 
 // New creates a Manager, establishes the initial Docker connection, starts all
@@ -125,6 +136,9 @@ func New(ctx context.Context, log *logger.Logger, opts ...dockerclient.Opt) (*Ma
 		networkStore:   dockernetworkstate.NewNetworkStore(log),
 		volumeState:    dockervolumestate.New(log),
 		volumeStore:    dockervolumestate.NewVolumeStore(log),
+
+		portproxyState: portproxystate.New(log),
+		portproxyStore: portproxystate.NewStore(log),
 	}
 
 	if err := m.connect(ctx); err != nil {
@@ -270,6 +284,14 @@ func (m *Manager) Exec() *dockerexecactor.Actor {
 	return m.exec
 }
 
+// PortProxy returns the port-proxy Clerk (actor + state + store).
+// EnsureProxy, RegisterContainer, DeregisterContainer.
+func (m *Manager) PortProxy() *portproxyclerk.Clerk {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.portProxy
+}
+
 // ── State accessors ───────────────────────────────────────────────────────────
 
 // ImageState returns the image operation state machine. Preserved across reconnects.
@@ -343,6 +365,23 @@ func (m *Manager) connect(ctx context.Context) error {
 	}
 
 	m.log.Debug("manager: store bootstrap complete")
+
+	// Set up port-proxy subsystem.
+	ppOps := portproxyops.New(conn, m.log)
+	m.portproxyActor = portproxyactor.New(ppOps, m.portproxyState, m.portproxyStore, m.log, nil)
+	m.portProxy = portproxyclerk.New(m.portproxyActor, m.portproxyState, m.portproxyStore, m.log)
+
+	// Ensure the proxy container is running (async, non-blocking on failure).
+	if t, err := m.portProxy.EnsureProxy(ctx); err != nil {
+		m.log.Warn("manager: portproxy EnsureProxy submit failed: %v", err)
+	} else {
+		ensCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		defer cancel()
+		if err := t.Wait(ensCtx); err != nil {
+			m.log.Warn("manager: portproxy EnsureProxy timed out or failed: %v", err)
+		}
+	}
+
 	return nil
 }
 
@@ -388,6 +427,13 @@ func (m *Manager) shutdown() {
 	if m.exec != nil {
 		m.exec.Close()
 		m.exec = nil
+	}
+
+	// Shut down port-proxy subsystem.
+	m.portProxy = nil
+	if m.portproxyActor != nil {
+		m.portproxyActor.Close()
+		m.portproxyActor = nil
 	}
 
 	m.log.Debug("manager: all subsystems shut down")

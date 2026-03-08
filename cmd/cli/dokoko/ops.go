@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dockermanager "dokoko.ai/dokoko/internal/docker/manager"
+	portproxyclerk "dokoko.ai/dokoko/internal/portproxy/clerk"
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerfilters "github.com/docker/docker/api/types/filters"
@@ -135,6 +136,19 @@ func runContainerOp(ctx context.Context, mgr *dockermanager.Manager, opIdx int, 
 		if err := startTicket.Wait(ctx); err != nil {
 			return fmt.Sprintf("Container created but start failed: %v", err)
 		}
+		if pp := mgr.PortProxy(); pp != nil {
+			res := <-mgr.Containers().Inspect(ctx, name)
+			if res.Err == nil && res.Info.Config != nil && len(res.Info.Config.ExposedPorts) > 0 {
+				ports := portproxyclerk.ParseExposedPorts(res.Info.Config.ExposedPorts)
+				go func() {
+					bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
+					if t, err := pp.RegisterContainer(bgCtx, name, res.Info.ID, ports); err == nil {
+						_ = t.Wait(bgCtx)
+					}
+				}()
+			}
+		}
 		return fmt.Sprintf("Container created and started (image=%s name=%s)", v(0), name)
 	case 1: // Start
 		ticket, err := mgr.Containers().Start(ctx, v(0), dockercontainer.StartOptions{})
@@ -155,6 +169,15 @@ func runContainerOp(ctx context.Context, mgr *dockermanager.Manager, opIdx int, 
 		}
 		return "Stop dispatched: " + v(0)
 	case 3: // Remove
+		if pp := mgr.PortProxy(); pp != nil {
+			go func() {
+				bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+				if t, err := pp.DeregisterContainer(bgCtx, v(0)); err == nil {
+					_ = t.Wait(bgCtx)
+				}
+			}()
+		}
 		ticket, err := mgr.Containers().Remove(ctx, v(0), dockercontainer.RemoveOptions{Force: true})
 		if err != nil {
 			return "Error: " + err.Error()

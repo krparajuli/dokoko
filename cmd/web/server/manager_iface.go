@@ -19,6 +19,8 @@ import (
 	dockernetworkstate "dokoko.ai/dokoko/internal/docker/networks/state"
 	dockervolumeactor "dokoko.ai/dokoko/internal/docker/volumes/actor"
 	dockervolumestate "dokoko.ai/dokoko/internal/docker/volumes/state"
+	portproxyactor "dokoko.ai/dokoko/internal/portproxy/actor"
+	portproxystate "dokoko.ai/dokoko/internal/portproxy/state"
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerfilters "github.com/docker/docker/api/types/filters"
@@ -82,6 +84,13 @@ type stateSummarizer interface {
 	Summary() (requested, active, failed, abandoned int)
 }
 
+// portProxyClerk is the subset of *portproxyclerk.Clerk used by container handlers.
+type portProxyClerk interface {
+	RegisterContainer(ctx context.Context, name, id string, ports []portproxystate.ContainerPort) (*portproxyactor.Ticket, error)
+	DeregisterContainer(ctx context.Context, name string) (*portproxyactor.Ticket, error)
+	Store() *portproxystate.Store
+}
+
 // ── Top-level Manager interface ───────────────────────────────────────────────
 
 // Manager is the complete interface the handler depends on.
@@ -94,6 +103,7 @@ type Manager interface {
 	Volumes() volumeClerk
 	Networks() networkClerk
 	Exec() execActor
+	PortProxy() portProxyClerk
 	ImageState() stateSummarizer
 	ContainerState() stateSummarizer
 	VolumeState() stateSummarizer
@@ -117,6 +127,7 @@ func (a *managerAdapter) Containers() containerActor        { return a.m.Contain
 func (a *managerAdapter) Volumes() volumeClerk              { return a.m.Volumes() }
 func (a *managerAdapter) Networks() networkClerk            { return a.m.Networks() }
 func (a *managerAdapter) Exec() execActor                   { return a.m.Exec() }
+func (a *managerAdapter) PortProxy() portProxyClerk         { return a.m.PortProxy() }
 func (a *managerAdapter) ImageState() stateSummarizer       { return a.m.ImageState() }
 func (a *managerAdapter) ContainerState() stateSummarizer   { return a.m.ContainerState() }
 func (a *managerAdapter) VolumeState() stateSummarizer      { return a.m.VolumeState() }

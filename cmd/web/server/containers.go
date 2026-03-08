@@ -1,10 +1,12 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
 
+	portproxyclerk "dokoko.ai/dokoko/internal/portproxy/clerk"
 	dockercontainer "github.com/docker/docker/api/types/container"
 )
 
@@ -64,6 +66,19 @@ func (h *handler) createContainer(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, "container created but start failed: "+err.Error())
 		return
 	}
+	if pp := h.mgr.PortProxy(); pp != nil {
+		res := <-h.mgr.Containers().Inspect(ctx, name)
+		if res.Err == nil && res.Info.Config != nil && len(res.Info.Config.ExposedPorts) > 0 {
+			ports := portproxyclerk.ParseExposedPorts(res.Info.Config.ExposedPorts)
+			go func() {
+				bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if t, err := pp.RegisterContainer(bgCtx, name, res.Info.ID, ports); err == nil {
+					_ = t.Wait(bgCtx)
+				}
+			}()
+		}
+	}
 	jsonAccepted(w, "container created and started (image="+body.Image+" name="+name+")")
 }
 
@@ -108,6 +123,16 @@ func (h *handler) removeContainer(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	ctx, cancel := opCtx(r)
 	defer cancel()
+
+	if pp := h.mgr.PortProxy(); pp != nil {
+		go func() {
+			bgCtx, bgCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer bgCancel()
+			if t, err := pp.DeregisterContainer(bgCtx, id); err == nil {
+				_ = t.Wait(bgCtx)
+			}
+		}()
+	}
 
 	ticket, err := h.mgr.Containers().Remove(ctx, id, dockercontainer.RemoveOptions{Force: true})
 	if err != nil {

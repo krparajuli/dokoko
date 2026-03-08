@@ -277,6 +277,16 @@ func (a *Actor) Remove(ctx context.Context, containerID string, opts dockerconta
 	fn := func(ctx context.Context) (string, error) {
 		a.log.Debug("worker: executing remove for %q (change=%s)", containerID, change.ID)
 
+		// Guard: block removal of the managed proxy container.
+		if info, err := a.ops.Inspect(ctx, containerID); err == nil {
+			if info.Config != nil {
+				if info.Config.Labels["dokoko.portproxy"] == "true" {
+					return "", errors.New("proxy container is managed by dokoko and cannot be removed")
+				}
+			}
+		}
+		// Inspect errors are non-fatal: let Docker return its own error on Remove.
+
 		if err := a.ops.Remove(ctx, containerID, opts); err != nil {
 			a.log.Error("worker: remove failed for %q: %v", containerID, err)
 			return "", err
