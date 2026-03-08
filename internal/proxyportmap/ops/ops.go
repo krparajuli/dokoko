@@ -130,11 +130,14 @@ func (o *Ops) resolveProcessNamesViaInodes(ctx context.Context, containerName st
 	}
 
 	// One shell invocation: emit "inode<TAB>comm" for every socket fd in /proc.
+	// NOTE: use socket:\[*) not socket:[*) — an unclosed bracket expression in
+	// a POSIX case pattern is undefined; dash/busybox (Alpine) never match it,
+	// silently producing zero output.
 	const script = `for pid in /proc/[0-9]*; do` +
 		` comm=$(cat "$pid/comm" 2>/dev/null) || continue;` +
 		` for fd in "$pid"/fd/*; do` +
 		` l=$(readlink "$fd" 2>/dev/null) || continue;` +
-		` case $l in socket:[*)` +
+		` case $l in socket:\[*)` +
 		` inode=${l#socket:[}; inode=${inode%]};` +
 		` printf '%s\t%s\n' "$inode" "$comm";;` +
 		` esac; done; done`
