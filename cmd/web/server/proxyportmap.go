@@ -3,6 +3,10 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	proxyportmapstate "dokoko.ai/dokoko/internal/proxyportmap/state"
@@ -118,6 +122,74 @@ func (h *handler) unmapPorts(w http.ResponseWriter, r *http.Request) {
 	jsonAccepted(w, "ports unmapped for user: "+userID)
 }
 
+// ── Port proxy ────────────────────────────────────────────────────────────────
+
+// proxyUserPort reverse-proxies traffic for a mapped container port through
+// the dokoko web server so the browser never needs a separate host:port.
+//
+// Subtree pattern — all sub-paths are forwarded to nginx → user container:
+//
+//	/api/webcontainers/port/{user_id}/{container_port}/
+//	/api/webcontainers/port/{user_id}/{container_port}/index.html
+func (h *handler) proxyUserPort(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("user_id")
+	cpStr := r.PathValue("container_port")
+
+	n, err := strconv.ParseUint(cpStr, 10, 16)
+	if err != nil {
+		http.Error(w, "invalid container_port", http.StatusBadRequest)
+		return
+	}
+	containerPort := uint16(n)
+
+	ppm := h.mgr.ProxyPortMap()
+	if ppm == nil {
+		http.Error(w, "proxyportmap not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	result := ppm.GetResult(userID)
+	if result == nil {
+		http.Error(w, "no port mapping for user — run scan first", http.StatusNotFound)
+		return
+	}
+
+	var hostPort uint16
+	for _, p := range result.Ports {
+		if p.ContainerPort == containerPort {
+			hostPort = p.HostPort
+			break
+		}
+	}
+	if hostPort == 0 {
+		http.Error(w, fmt.Sprintf("port %d not mapped for user", containerPort), http.StatusNotFound)
+		return
+	}
+
+	target, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", hostPort))
+	proxy := httputil.NewSingleHostReverseProxy(target)
+
+	// Strip the dokoko path prefix before forwarding so the upstream app
+	// sees its own path space (e.g. "/" not "/api/webcontainers/port/…/8080/").
+	prefix := fmt.Sprintf("/api/webcontainers/port/%s/%d", userID, containerPort)
+	defaultDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		defaultDirector(req)
+		req.URL.Path = strings.TrimPrefix(req.URL.Path, prefix)
+		if req.URL.Path == "" || req.URL.Path[0] != '/' {
+			req.URL.Path = "/" + req.URL.Path
+		}
+		req.Host = target.Host
+	}
+
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		h.log.Warn("proxyUserPort: upstream error user=%s port=%d: %v", userID, containerPort, err)
+		http.Error(w, "upstream unavailable", http.StatusBadGateway)
+	}
+
+	proxy.ServeHTTP(w, r)
+}
+
 // ── Response helpers ──────────────────────────────────────────────────────────
 
 type portEntryResp struct {
@@ -134,17 +206,16 @@ type portScanResp struct {
 }
 
 // buildPortScanResp converts a ScanResult to its JSON representation.
-// The URL for each port uses the request's Host header so it works regardless
-// of where the server is reachable (localhost, LAN IP, etc.).
-func buildPortScanResp(r *http.Request, result *proxyportmapstate.ScanResult) portScanResp {
-	host := r.Host
-	// Strip any existing port from host for clean URL construction.
+// URLs are same-origin paths routed through the dokoko web server proxy so
+// the browser never needs to connect to a raw host:port.
+func buildPortScanResp(_ *http.Request, result *proxyportmapstate.ScanResult) portScanResp {
 	entries := make([]portEntryResp, 0, len(result.Ports))
 	for _, p := range result.Ports {
 		entries = append(entries, portEntryResp{
 			ContainerPort: p.ContainerPort,
 			HostPort:      p.HostPort,
-			URL:           fmt.Sprintf("http://%s:%d", hostOnly(host), p.HostPort),
+			URL: fmt.Sprintf("/api/webcontainers/port/%s/%d/",
+				result.UserID, p.ContainerPort),
 		})
 	}
 	return portScanResp{
@@ -153,17 +224,4 @@ func buildPortScanResp(r *http.Request, result *proxyportmapstate.ScanResult) po
 		Ports:         entries,
 		ScannedAt:     result.ScannedAt,
 	}
-}
-
-// hostOnly strips the port from a host:port string, returning just the hostname.
-func hostOnly(hostPort string) string {
-	for i := len(hostPort) - 1; i >= 0; i-- {
-		if hostPort[i] == ':' {
-			return hostPort[:i]
-		}
-		if hostPort[i] == ']' { // IPv6 without port
-			return hostPort
-		}
-	}
-	return hostPort
 }

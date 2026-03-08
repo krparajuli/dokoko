@@ -62,6 +62,8 @@ func (s *Server) routes(uiDir string) http.Handler {
 	mux.HandleFunc("POST /api/proxyportmap/scan", h.scanPorts)
 	mux.HandleFunc("GET /api/proxyportmap/mappings/{user_id}", h.getMappings)
 	mux.HandleFunc("DELETE /api/proxyportmap/mappings/{user_id}", h.unmapPorts)
+	// Subtree — proxies user container ports through the web server (same-origin).
+	mux.HandleFunc("/api/webcontainers/port/{user_id}/{container_port}/", h.proxyUserPort)
 
 	// State (all subsystems)
 	mux.HandleFunc("GET /api/state", h.getState)

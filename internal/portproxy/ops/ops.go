@@ -7,11 +7,13 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"strings"
 
 	"dokoko.ai/dokoko/internal/docker"
 	"dokoko.ai/dokoko/pkg/logger"
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
+	dockerfilters "github.com/docker/docker/api/types/filters"
 	dockermount "github.com/docker/docker/api/types/mount"
 	dockernetwork "github.com/docker/docker/api/types/network"
 	dockernat "github.com/docker/go-connections/nat"
@@ -38,11 +40,13 @@ const (
 
 // proxyStartScript generates a self-contained OpenSSL cert and writes a
 // minimal proxy.conf before exec-ing nginx in the foreground.
+// proxyStartScript always writes a minimal valid nginx config on each start so
+// that a stale or corrupt config on the persistent volume cannot cause a
+// restart loop.  The TLS cert is still guarded (expensive to regenerate).
 const proxyStartScript = `mkdir -p /etc/nginx/ssl && ` +
 	`[ -f /etc/nginx/ssl/cert.pem ] || openssl req -x509 -nodes -days 3650 -newkey rsa:2048 ` +
 	`-keyout /etc/nginx/ssl/key.pem -out /etc/nginx/ssl/cert.pem ` +
 	`-subj '/CN=dokoko-proxy' 2>/dev/null && ` +
-	`[ -f /etc/nginx/conf.d/proxy.conf ] || ` +
 	`printf 'map $http_upgrade $connection_upgrade{default upgrade;'"'"''"'"' close;}\n' ` +
 	`> /etc/nginx/conf.d/proxy.conf && ` +
 	`exec nginx -g 'daemon off;'`
@@ -123,7 +127,8 @@ func (o *Ops) EnsureProxyContainer(ctx context.Context) (string, error) {
 }
 
 // CreateProxyNetwork creates a bridge network named "proxy_<containerName>"
-// labelled with ProxyLabel.
+// labelled with ProxyLabel.  If the network already exists its ID is returned
+// without error (idempotent).
 func (o *Ops) CreateProxyNetwork(ctx context.Context, containerName string) (string, error) {
 	networkName := "proxy_" + containerName
 	o.log.LowTrace("portproxy ops: creating network %s", networkName)
@@ -133,7 +138,24 @@ func (o *Ops) CreateProxyNetwork(ctx context.Context, containerName string) (str
 		Labels: map[string]string{ProxyLabel: ProxyLabelValue},
 	})
 	if err != nil {
-		return "", fmt.Errorf("portproxy: create network %q: %w", networkName, err)
+		if !strings.Contains(err.Error(), "already exists") {
+			return "", fmt.Errorf("portproxy: create network %q: %w", networkName, err)
+		}
+		// Network already exists — look up its ID.
+		o.log.Debug("portproxy ops: network %s already exists, looking up ID", networkName)
+		networks, listErr := o.conn.Client().NetworkList(ctx, dockertypes.NetworkListOptions{
+			Filters: dockerfilters.NewArgs(dockerfilters.Arg("name", networkName)),
+		})
+		if listErr != nil {
+			return "", fmt.Errorf("portproxy: list networks to find %q: %w", networkName, listErr)
+		}
+		for _, n := range networks {
+			if n.Name == networkName {
+				o.log.Info("portproxy ops: reusing existing network %s id=%s", networkName, n.ID[:12])
+				return n.ID, nil
+			}
+		}
+		return "", fmt.Errorf("portproxy: network %q reported as existing but not found in list", networkName)
 	}
 
 	o.log.Info("portproxy ops: created network %s id=%s", networkName, resp.ID[:12])
@@ -142,18 +164,25 @@ func (o *Ops) CreateProxyNetwork(ctx context.Context, containerName string) (str
 
 // ConnectToProxyNetwork connects both the proxy container and the managed
 // container to networkID.  The managed container is given an alias equal to
-// its name so nginx can resolve it by name.
+// its name so nginx can resolve it by name.  "Already connected" errors are
+// silently ignored so the operation is idempotent.
 func (o *Ops) ConnectToProxyNetwork(ctx context.Context, networkID, proxyID, managedID, managedName string) error {
 	o.log.LowTrace("portproxy ops: connecting containers to network %s", networkID)
 
 	if err := o.conn.Client().NetworkConnect(ctx, networkID, proxyID, nil); err != nil {
-		return fmt.Errorf("portproxy: connect proxy to network %q: %w", networkID, err)
+		if !strings.Contains(err.Error(), "already exists") {
+			return fmt.Errorf("portproxy: connect proxy to network %q: %w", networkID, err)
+		}
+		o.log.Debug("portproxy ops: proxy already connected to network %s", networkID)
 	}
 
 	if err := o.conn.Client().NetworkConnect(ctx, networkID, managedID, &dockernetwork.EndpointSettings{
 		Aliases: []string{managedName},
 	}); err != nil {
-		return fmt.Errorf("portproxy: connect managed container %q to network %q: %w", managedName, networkID, err)
+		if !strings.Contains(err.Error(), "already exists") {
+			return fmt.Errorf("portproxy: connect managed container %q to network %q: %w", managedName, networkID, err)
+		}
+		o.log.Debug("portproxy ops: %s already connected to network %s", managedName, networkID)
 	}
 
 	o.log.Info("portproxy ops: connected proxy and %s to network %s", managedName, networkID)

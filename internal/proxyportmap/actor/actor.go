@@ -167,40 +167,52 @@ func (a *Actor) ScanAndMap(ctx context.Context, userID, containerName, container
 			return "", fmt.Errorf("scan ports: %w", err)
 		}
 
+		// 2. Store result immediately — even with no host-port mapping yet.
+		//    This guarantees the user always sees found ports regardless of
+		//    whether proxy registration succeeds later.
+		rawMapped := make([]proxyportmapstate.MappedPort, len(rawPorts))
+		for i, p := range rawPorts {
+			rawMapped[i] = proxyportmapstate.MappedPort{ContainerPort: p}
+		}
+		a.store.SetResult(&proxyportmapstate.ScanResult{
+			UserID:        userID,
+			ContainerName: containerName,
+			ContainerID:   containerID,
+			Ports:         rawMapped,
+			ScannedAt:     time.Now(),
+		})
+
 		if len(rawPorts) == 0 {
-			a.store.SetResult(&proxyportmapstate.ScanResult{
-				UserID:        userID,
-				ContainerName: containerName,
-				ContainerID:   containerID,
-				Ports:         nil,
-				ScannedAt:     time.Now(),
-			})
 			return "0 ports", nil
 		}
 
-		// 2. Ensure the proxy container is running.
+		// 3. Ensure the proxy container is running.
 		ept, err := a.portProxy.EnsureProxy(ctx)
 		if err != nil {
-			return "", fmt.Errorf("ensure proxy: %w", err)
+			a.log.Warn("proxyportmap: ensure proxy failed (ports found but not proxied): %v", err)
+			return fmt.Sprintf("%d ports (proxy unavailable)", len(rawPorts)), nil
 		}
 		if err := ept.Wait(ctx); err != nil {
-			return "", fmt.Errorf("ensure proxy wait: %w", err)
+			a.log.Warn("proxyportmap: ensure proxy wait failed (ports found but not proxied): %v", err)
+			return fmt.Sprintf("%d ports (proxy unavailable)", len(rawPorts)), nil
 		}
 
-		// 3. Register ports with the proxy.
+		// 4. Register ports with the proxy.
 		cports := make([]portproxystate.ContainerPort, len(rawPorts))
 		for i, p := range rawPorts {
 			cports[i] = portproxystate.ContainerPort{Port: p, Proto: "tcp"}
 		}
 		rt, err := a.portProxy.RegisterContainer(ctx, containerName, containerID, cports)
 		if err != nil {
-			return "", fmt.Errorf("register container: %w", err)
+			a.log.Warn("proxyportmap: register container failed (ports found but not proxied): %v", err)
+			return fmt.Sprintf("%d ports (proxy registration failed)", len(rawPorts)), nil
 		}
 		if err := rt.Wait(ctx); err != nil {
-			return "", fmt.Errorf("register container wait: %w", err)
+			a.log.Warn("proxyportmap: register container wait failed (ports found but not proxied): %v", err)
+			return fmt.Sprintf("%d ports (proxy registration failed)", len(rawPorts)), nil
 		}
 
-		// 4. Build MappedPort list from the portproxy store.
+		// 5. Update result with host-port mappings from the portproxy store.
 		mappings := a.portProxy.Store().GetByContainer(containerName)
 		mapped := make([]proxyportmapstate.MappedPort, 0, len(mappings))
 		for _, m := range mappings {

@@ -34,18 +34,42 @@ func New(conn *docker.Connection, log *logger.Logger) *Ops {
 }
 
 // ScanListeningPorts discovers TCP ports in LISTEN state inside the named
-// container.  It runs `ss -tlnH` first; if that fails it falls back to
-// reading /proc/net/tcp.  Port 7681 (ttyd) is always excluded.
+// container. It queries all three sources (/proc/net/tcp, /proc/net/tcp6, ss)
+// and merges the results. Port 7681 (ttyd) is always excluded.
+//
+// Docker exec does not propagate the command's exit code as an error, so we
+// cannot rely on a failed ss invocation returning an error — instead we always
+// try all sources and merge what we find.
 func (o *Ops) ScanListeningPorts(ctx context.Context, containerName string) ([]uint16, error) {
 	o.log.LowTrace("proxyportmap ops: scanning ports in %s", containerName)
 
-	ports, err := o.scanWithSS(ctx, containerName)
-	if err != nil {
-		o.log.Debug("proxyportmap ops: ss failed (%v), trying /proc/net/tcp", err)
-		ports, err = o.scanWithProcNet(ctx, containerName)
-		if err != nil {
-			return nil, fmt.Errorf("scan ports in %s: %w", containerName, err)
+	seen := make(map[uint16]bool)
+	var ports []uint16
+
+	add := func(pp []uint16) {
+		for _, p := range pp {
+			if !seen[p] {
+				seen[p] = true
+				ports = append(ports, p)
+			}
 		}
+	}
+
+	// /proc/net/tcp — IPv4 listeners; always present in Linux containers.
+	if out, err := o.execRead(ctx, containerName, []string{"cat", "/proc/net/tcp"}); err == nil {
+		add(parseProcNetTCP(out))
+	} else {
+		o.log.Debug("proxyportmap ops: /proc/net/tcp unavailable in %s: %v", containerName, err)
+	}
+
+	// /proc/net/tcp6 — IPv6 listeners; same on-disk format as /proc/net/tcp.
+	if out, err := o.execRead(ctx, containerName, []string{"cat", "/proc/net/tcp6"}); err == nil {
+		add(parseProcNetTCP(out))
+	}
+
+	// ss — best-effort supplement (may not be installed or may not support -H).
+	if out, err := o.execRead(ctx, containerName, []string{"ss", "-tlnH"}); err == nil {
+		add(parseSS(out))
 	}
 
 	filtered := make([]uint16, 0, len(ports))
@@ -60,22 +84,6 @@ func (o *Ops) ScanListeningPorts(ctx context.Context, containerName string) ([]u
 }
 
 // ── Scan implementations ──────────────────────────────────────────────────────
-
-func (o *Ops) scanWithSS(ctx context.Context, name string) ([]uint16, error) {
-	out, err := o.execRead(ctx, name, []string{"ss", "-tlnH"})
-	if err != nil {
-		return nil, err
-	}
-	return parseSS(out), nil
-}
-
-func (o *Ops) scanWithProcNet(ctx context.Context, name string) ([]uint16, error) {
-	out, err := o.execRead(ctx, name, []string{"cat", "/proc/net/tcp"})
-	if err != nil {
-		return nil, err
-	}
-	return parseProcNetTCP(out), nil
-}
 
 // execRead runs cmd inside the container and returns the combined stdout bytes.
 // Docker's multiplexed stream is demuxed via dockerstdcopy.StdCopy.
@@ -105,19 +113,30 @@ func (o *Ops) execRead(ctx context.Context, containerName string, cmd []string) 
 // ── Output parsers ────────────────────────────────────────────────────────────
 
 // parseSS extracts listening TCP ports from `ss -tlnH` output.
-// Each line has the form: State Recv-Q Send-Q Local Peer [Process]
-// e.g.  LISTEN 0 128  0.0.0.0:3000  0.0.0.0:*
+//
+// Two formats exist depending on iproute2 version:
+//
+//	Old (no Netid column): LISTEN 0 128 0.0.0.0:8080 0.0.0.0:*
+//	New (Netid column):    tcp LISTEN 0 128 0.0.0.0:8080 0.0.0.0:*
+//
+// Old format: fields[0]=="LISTEN", local at fields[3].
+// New format: fields[1]=="LISTEN", local at fields[4].
 func parseSS(data []byte) []uint16 {
 	seen := make(map[uint16]bool)
 	var ports []uint16
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
-		if len(fields) < 4 {
+		var localIdx int
+		switch {
+		case len(fields) >= 5 && fields[0] == "LISTEN":
+			localIdx = 3 // old format: no Netid column
+		case len(fields) >= 6 && fields[1] == "LISTEN":
+			localIdx = 4 // new format: Netid column present
+		default:
 			continue
 		}
-		// field[3] is the local address:port
-		if p := portFromAddr(fields[3]); p > 0 && !seen[p] {
+		if p := portFromAddr(fields[localIdx]); p > 0 && !seen[p] {
 			ports = append(ports, p)
 			seen[p] = true
 		}

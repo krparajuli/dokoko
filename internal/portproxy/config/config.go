@@ -36,13 +36,12 @@ func Generate(mappings []*portproxystate.PortMapping) string {
 }
 
 // serverBlock renders one nginx server{} block for a single TCP port mapping.
+// HTTP only — TLS is not needed within Docker networking, and combining
+// `listen N;` and `listen N ssl;` on the same port is invalid nginx config.
 func serverBlock(m *portproxystate.PortMapping) string {
 	return fmt.Sprintf(`
 server {
     listen %d;
-    listen %d ssl;
-    ssl_certificate     /etc/nginx/ssl/cert.pem;
-    ssl_certificate_key /etc/nginx/ssl/key.pem;
 
     location / {
         proxy_pass         http://%s:%d;
@@ -56,7 +55,6 @@ server {
     }
 }
 `,
-		m.HostPort,
 		m.HostPort,
 		m.ContainerName,
 		m.ContainerPort.Port,
