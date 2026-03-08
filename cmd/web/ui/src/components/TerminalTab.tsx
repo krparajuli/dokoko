@@ -198,8 +198,8 @@ export default function TerminalTab() {
         </div>
       )}
 
-      {/* Session ready — embed ttyd */}
-      {session && session.status === 'ready' && session.terminal_url && (
+      {/* Session ready — embed ttyd via same-origin proxy */}
+      {session && session.status === 'ready' && session.terminal_path && (
         <div className="space-y-2">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -209,7 +209,7 @@ export default function TerminalTab() {
             </div>
             <div className="flex gap-2">
               <a
-                href={session.terminal_url}
+                href={session.terminal_path}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200"
@@ -228,7 +228,7 @@ export default function TerminalTab() {
           <div className="rounded border border-zinc-200 dark:border-zinc-700 overflow-hidden"
                style={{ height: 'calc(100vh - 260px)', minHeight: 400 }}>
             <iframe
-              src={session.terminal_url}
+              src={session.terminal_path}
               className="w-full h-full border-0"
               title="Web Terminal"
               allow="clipboard-read; clipboard-write"

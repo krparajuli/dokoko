@@ -2,8 +2,9 @@ package server
 
 import (
 	"fmt"
-	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 
 	webcontainersstate "dokoko.ai/dokoko/internal/webcontainers/state"
 )
@@ -74,13 +75,12 @@ func (h *handler) provisionWebContainer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Return the session so the frontend can build the terminal URL immediately.
 	sess := wc.GetSession(body.UserID)
 	if sess == nil {
 		jsonErr(w, http.StatusInternalServerError, "session not found after provision")
 		return
 	}
-	jsonOK(w, sessionResponse(r, sess))
+	jsonOK(w, sessionResponse(sess))
 }
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -100,7 +100,7 @@ func (h *handler) getWebSession(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusNotFound, "no session found for user")
 		return
 	}
-	jsonOK(w, sessionResponse(r, sess))
+	jsonOK(w, sessionResponse(sess))
 }
 
 // terminateWebSession stops and removes the user's web container.
@@ -129,7 +129,58 @@ func (h *handler) terminateWebSession(w http.ResponseWriter, r *http.Request) {
 	jsonAccepted(w, "session terminated for user: "+userID)
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Terminal proxy ────────────────────────────────────────────────────────────
+
+// proxyWebTerminal reverse-proxies all ttyd traffic (HTTP assets + WebSocket)
+// for the given user through the dokoko web server so the browser never needs
+// to connect to a separate port.
+//
+// The path `/api/webcontainers/terminal/{user_id}/` is registered as a
+// subtree pattern, so it catches every sub-path:
+//   - GET  /…/{user_id}/          → ttyd HTML page
+//   - GET  /…/{user_id}/token     → ttyd auth token
+//   - GET  /…/{user_id}/ws        → WebSocket terminal (upgraded by ReverseProxy)
+//
+// ttyd is started with --base-path matching this prefix so it generates
+// correct relative URLs for its static assets.
+func (h *handler) proxyWebTerminal(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("user_id")
+
+	wc := h.mgr.WebContainers()
+	if wc == nil {
+		http.Error(w, "webcontainers not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	sess := wc.GetSession(userID)
+	if sess == nil || sess.Status != webcontainersstate.StatusReady || sess.HostPort == 0 {
+		http.Error(w, "no ready session for this user", http.StatusNotFound)
+		return
+	}
+
+	target, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", sess.HostPort))
+	proxy := httputil.NewSingleHostReverseProxy(target)
+
+	// Override the Director so the request path is forwarded as-is.
+	// httputil.NewSingleHostReverseProxy's default Director prepends the
+	// target's path (empty here), which is what we want; the only correction
+	// needed is clearing the Host header so ttyd receives the backend address.
+	defaultDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		defaultDirector(req)
+		req.Host = target.Host
+	}
+
+	// Suppress default error logging; surface errors as plain 502s instead.
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		h.log.Warn("webcontainer proxy: upstream error user=%s: %v", userID, err)
+		http.Error(w, "terminal unavailable — ttyd may still be starting", http.StatusBadGateway)
+	}
+
+	proxy.ServeHTTP(w, r)
+}
+
+// ── Session response ──────────────────────────────────────────────────────────
 
 type sessionResp struct {
 	UserID        string `json:"user_id"`
@@ -138,13 +189,12 @@ type sessionResp struct {
 	ContainerID   string `json:"container_id"`
 	Status        string `json:"status"`
 	ErrorMsg      string `json:"error,omitempty"`
-	TerminalURL   string `json:"terminal_url,omitempty"`
+	// TerminalPath is the same-origin path to the embedded terminal.
+	// Only present when Status == "ready".
+	TerminalPath string `json:"terminal_path,omitempty"`
 }
 
-// sessionResponse builds the JSON-safe representation of a UserSession.
-// terminal_url is populated only when the session is ready; its hostname is
-// derived from the request so remote clients get the right address.
-func sessionResponse(r *http.Request, sess *webcontainersstate.UserSession) sessionResp {
+func sessionResponse(sess *webcontainersstate.UserSession) sessionResp {
 	resp := sessionResp{
 		UserID:        sess.UserID,
 		CatalogID:     sess.CatalogID,
@@ -154,27 +204,7 @@ func sessionResponse(r *http.Request, sess *webcontainersstate.UserSession) sess
 		ErrorMsg:      sess.ErrorMsg,
 	}
 	if sess.Status == webcontainersstate.StatusReady && sess.HostPort > 0 {
-		host := requestHost(r)
-		resp.TerminalURL = fmt.Sprintf("http://%s:%d/", host, sess.HostPort)
+		resp.TerminalPath = "/api/webcontainers/terminal/" + sess.UserID + "/"
 	}
 	return resp
-}
-
-// requestHost returns just the hostname from the HTTP request's Host header,
-// stripping any port.  Falls back to "localhost".
-func requestHost(r *http.Request) string {
-	if h := r.Header.Get("X-Forwarded-Host"); h != "" {
-		if host, _, err := net.SplitHostPort(h); err == nil {
-			return host
-		}
-		return h
-	}
-	host, _, err := net.SplitHostPort(r.Host)
-	if err != nil {
-		if r.Host != "" {
-			return r.Host
-		}
-		return "localhost"
-	}
-	return host
 }

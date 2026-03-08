@@ -38,7 +38,7 @@ if [ ! -x /usr/local/bin/ttyd ]; then
     "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${ARCH}"
   chmod +x /usr/local/bin/ttyd
 fi
-exec ttyd -W -p 7681 tmux new -A -s main
+exec ttyd -W -p 7681 --base-path "${TTYD_BASE_PATH:-/}" tmux new -A -s main
 `
 
 // alpineScript installs ttyd + tmux via apk, then starts ttyd.
@@ -51,7 +51,7 @@ if [ ! -x /usr/local/bin/ttyd ]; then
     "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${ARCH}"
   chmod +x /usr/local/bin/ttyd
 fi
-exec ttyd -W -p 7681 tmux new -A -s main
+exec ttyd -W -p 7681 --base-path "${TTYD_BASE_PATH:-/}" tmux new -A -s main
 `
 
 // Catalog is the ordered list of images users can choose from.

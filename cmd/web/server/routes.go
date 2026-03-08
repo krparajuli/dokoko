@@ -55,6 +55,8 @@ func (s *Server) routes(uiDir string) http.Handler {
 	mux.HandleFunc("POST /api/webcontainers/provision", h.provisionWebContainer)
 	mux.HandleFunc("GET /api/webcontainers/session/{user_id}", h.getWebSession)
 	mux.HandleFunc("DELETE /api/webcontainers/session/{user_id}", h.terminateWebSession)
+	// Subtree pattern — catches all ttyd sub-paths (assets, /ws, /token).
+	mux.HandleFunc("/api/webcontainers/terminal/{user_id}/", h.proxyWebTerminal)
 
 	// State (all subsystems)
 	mux.HandleFunc("GET /api/state", h.getState)

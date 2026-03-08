@@ -117,5 +117,5 @@ export interface WebSession {
   container_id: string
   status: 'provisioning' | 'ready' | 'terminating' | 'stopped' | 'error'
   error?: string
-  terminal_url?: string
+  terminal_path?: string
 }

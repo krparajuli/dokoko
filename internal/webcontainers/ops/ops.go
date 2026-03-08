@@ -91,19 +91,25 @@ func (o *Ops) ProvisionContainer(ctx context.Context, userID string, def *webcon
 		_ = cli.ContainerRemove(ctx, name, dockercontainer.RemoveOptions{Force: true})
 	}
 
+	// ttyd base path so the reverse proxy can forward requests without rewriting.
+	basePath := "/api/webcontainers/terminal/" + userID + "/"
+
 	// Create the container.
 	containerCfg := &dockercontainer.Config{
 		Image:        def.Image,
 		Cmd:          []string{"sh", "-c", def.StartScript},
 		ExposedPorts: dockernat.PortSet{TtydPort: {}},
+		Env:          []string{"TTYD_BASE_PATH=" + basePath},
 		Labels: map[string]string{
-			ManagedLabel:   ManagedLabelValue,
-			"dokoko.user":  userID,
+			ManagedLabel:  ManagedLabelValue,
+			"dokoko.user": userID,
 		},
 	}
+	// Bind to 127.0.0.1 so ttyd is only reachable via the Go reverse proxy,
+	// not directly from the outside world.
 	hostCfg := &dockercontainer.HostConfig{
 		PortBindings: dockernat.PortMap{
-			TtydPort: []dockernat.PortBinding{{HostIP: "0.0.0.0", HostPort: "0"}},
+			TtydPort: []dockernat.PortBinding{{HostIP: "127.0.0.1", HostPort: "0"}},
 		},
 		RestartPolicy: dockercontainer.RestartPolicy{Name: "unless-stopped"},
 	}
