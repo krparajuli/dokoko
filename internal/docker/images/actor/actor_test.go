@@ -302,8 +302,14 @@ func TestTag_Failure_StateGoesFailed(t *testing.T) {
 
 func TestQueueFull_ReturnsErrAndAbandons(t *testing.T) {
 	blocker := make(chan struct{})
+
+	// occupierStarted is closed the first time a worker begins executing a pullFn,
+	// letting the test synchronize before filling the queue.
+	occupierStarted := make(chan struct{})
+	var startOnce sync.Once
 	ops := &fakeOps{
 		pullFn: func(ctx context.Context, _ string, _ dockerimage.PullOptions) error {
+			startOnce.Do(func() { close(occupierStarted) })
 			<-blocker
 			return nil
 		},
@@ -311,11 +317,26 @@ func TestQueueFull_ReturnsErrAndAbandons(t *testing.T) {
 	// 1 worker, queue size 1.  One item occupies the worker, one fills the queue.
 	a, st := newActor(t, ops, &actor.Config{Workers: 1, QueueSize: 1})
 
+	// Register AFTER newActor so that in LIFO cleanup order this runs BEFORE
+	// a.Close(), ensuring the worker can exit and a.Close() doesn't block.
+	t.Cleanup(func() {
+		select {
+		case <-blocker:
+		default:
+			close(blocker)
+		}
+	})
+
 	// Occupy the worker.
 	_, err := a.Pull(context.Background(), "occupier:latest", dockerimage.PullOptions{})
 	if err != nil {
 		t.Fatalf("occupier: %v", err)
 	}
+	// Wait until the worker has actually dequeued and started the occupier.
+	// Without this the queue still holds the occupier when we submit queue-filler,
+	// causing a spurious ErrQueueFull.
+	<-occupierStarted
+
 	// Fill the queue.
 	_, err = a.Pull(context.Background(), "queue-filler:latest", dockerimage.PullOptions{})
 	if err != nil {
@@ -337,8 +358,7 @@ func TestQueueFull_ReturnsErrAndAbandons(t *testing.T) {
 	if abn < 1 {
 		t.Errorf("expected at least 1 abandoned, got req=%d abn=%d", req, abn)
 	}
-
-	close(blocker)
+	// blocker is closed by t.Cleanup above.
 }
 
 func TestActorClosed_ReturnsErrAndAbandons(t *testing.T) {
