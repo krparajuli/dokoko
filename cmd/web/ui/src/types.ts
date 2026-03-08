@@ -126,6 +126,7 @@ export interface MappedPort {
   container_port: number
   host_port: number
   url: string
+  process?: string
 }
 
 export interface PortScanResult {

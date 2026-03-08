@@ -23,9 +23,10 @@ import (
 	"sync"
 	"time"
 
-	proxyportmapstate "dokoko.ai/dokoko/internal/proxyportmap/state"
 	portproxyactor "dokoko.ai/dokoko/internal/portproxy/actor"
 	portproxystate "dokoko.ai/dokoko/internal/portproxy/state"
+	proxyportmapops "dokoko.ai/dokoko/internal/proxyportmap/ops"
+	proxyportmapstate "dokoko.ai/dokoko/internal/proxyportmap/state"
 	"dokoko.ai/dokoko/pkg/logger"
 )
 
@@ -60,7 +61,7 @@ func (c *Config) withDefaults() Config {
 
 // opsProvider is the Docker-exec layer for port scanning.
 type opsProvider interface {
-	ScanListeningPorts(ctx context.Context, containerName string) ([]uint16, error)
+	ScanListeningPorts(ctx context.Context, containerName string) ([]proxyportmapops.PortInfo, error)
 }
 
 // proxyRegistrar is the portproxy clerk interface needed by this actor.
@@ -171,8 +172,8 @@ func (a *Actor) ScanAndMap(ctx context.Context, userID, containerName, container
 		//    This guarantees the user always sees found ports regardless of
 		//    whether proxy registration succeeds later.
 		rawMapped := make([]proxyportmapstate.MappedPort, len(rawPorts))
-		for i, p := range rawPorts {
-			rawMapped[i] = proxyportmapstate.MappedPort{ContainerPort: p}
+		for i, info := range rawPorts {
+			rawMapped[i] = proxyportmapstate.MappedPort{ContainerPort: info.Port, Process: info.Process}
 		}
 		a.store.SetResult(&proxyportmapstate.ScanResult{
 			UserID:        userID,
@@ -199,8 +200,8 @@ func (a *Actor) ScanAndMap(ctx context.Context, userID, containerName, container
 
 		// 4. Register ports with the proxy.
 		cports := make([]portproxystate.ContainerPort, len(rawPorts))
-		for i, p := range rawPorts {
-			cports[i] = portproxystate.ContainerPort{Port: p, Proto: "tcp"}
+		for i, info := range rawPorts {
+			cports[i] = portproxystate.ContainerPort{Port: info.Port, Proto: "tcp"}
 		}
 		rt, err := a.portProxy.RegisterContainer(ctx, containerName, containerID, cports)
 		if err != nil {
@@ -213,15 +214,26 @@ func (a *Actor) ScanAndMap(ctx context.Context, userID, containerName, container
 		}
 
 		// 5. Update result with host-port mappings from the portproxy store.
+		// Build a port → process name lookup so we can preserve process info.
+		portToProcess := make(map[uint16]string, len(rawPorts))
+		for _, info := range rawPorts {
+			portToProcess[info.Port] = info.Process
+		}
+
 		mappings := a.portProxy.Store().GetByContainer(containerName)
 		mapped := make([]proxyportmapstate.MappedPort, 0, len(mappings))
 		for _, m := range mappings {
 			if m.Status != portproxystate.MappingStatusActive {
 				continue
 			}
+			// Skip ports no longer in the current scan — they've stopped listening.
+			if _, stillListening := portToProcess[m.ContainerPort.Port]; !stillListening {
+				continue
+			}
 			mapped = append(mapped, proxyportmapstate.MappedPort{
 				ContainerPort: m.ContainerPort.Port,
 				HostPort:      m.HostPort,
+				Process:       portToProcess[m.ContainerPort.Port],
 			})
 		}
 

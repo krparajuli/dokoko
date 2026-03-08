@@ -196,6 +196,7 @@ type portEntryResp struct {
 	ContainerPort uint16 `json:"container_port"`
 	HostPort      uint16 `json:"host_port"`
 	URL           string `json:"url"`
+	Process       string `json:"process,omitempty"`
 }
 
 type portScanResp struct {
@@ -216,6 +217,7 @@ func buildPortScanResp(_ *http.Request, result *proxyportmapstate.ScanResult) po
 			HostPort:      p.HostPort,
 			URL: fmt.Sprintf("/api/webcontainers/port/%s/%d/",
 				result.UserID, p.ContainerPort),
+			Process: p.Process,
 		})
 	}
 	return portScanResp{

@@ -8,6 +8,7 @@ import (
 
 	portproxyactor "dokoko.ai/dokoko/internal/portproxy/actor"
 	portproxystate "dokoko.ai/dokoko/internal/portproxy/state"
+	proxyportmapops "dokoko.ai/dokoko/internal/proxyportmap/ops"
 	proxyportmapstate "dokoko.ai/dokoko/internal/proxyportmap/state"
 	"dokoko.ai/dokoko/pkg/logger"
 )
@@ -27,11 +28,11 @@ func newTestLogger() *logger.Logger { return logger.New(logger.LevelError) }
 // ── Mock implementations ───────────────────────────────────────────────────────
 
 type mockOps struct {
-	ports []uint16
+	ports []proxyportmapops.PortInfo
 	err   error
 }
 
-func (m *mockOps) ScanListeningPorts(_ context.Context, _ string) ([]uint16, error) {
+func (m *mockOps) ScanListeningPorts(_ context.Context, _ string) ([]proxyportmapops.PortInfo, error) {
 	return m.ports, m.err
 }
 
@@ -108,7 +109,7 @@ func TestScanAndMap_noPorts(t *testing.T) {
 // when proxy registration fails, the scan result must still be stored so the
 // caller can show the user which ports were found.
 func TestScanAndMap_storesRawPortsOnProxyFailure(t *testing.T) {
-	ops := &mockOps{ports: []uint16{8080, 3000}}
+	ops := &mockOps{ports: []proxyportmapops.PortInfo{{Port: 8080}, {Port: 3000}}}
 	pp := &mockProxy{
 		ensureErr: errors.New("proxy container unavailable"),
 		store:     portproxystate.NewStore(newTestLogger()),
@@ -145,7 +146,7 @@ func TestScanAndMap_storesRawPortsOnProxyFailure(t *testing.T) {
 // TestScanAndMap_storesRawPortsOnRegisterFailure verifies the same guarantee
 // when EnsureProxy succeeds but RegisterContainer fails.
 func TestScanAndMap_storesRawPortsOnRegisterFailure(t *testing.T) {
-	ops := &mockOps{ports: []uint16{5000}}
+	ops := &mockOps{ports: []proxyportmapops.PortInfo{{Port: 5000}}}
 	pp := &mockProxy{
 		registerErr: errors.New("docker network error"),
 		store:       portproxystate.NewStore(newTestLogger()),
@@ -176,7 +177,7 @@ func TestScanAndMap_storesRawPortsOnRegisterFailure(t *testing.T) {
 // TestScanAndMap_updatesHostPortsOnSuccess verifies that when proxy
 // registration succeeds the result is updated with the allocated host ports.
 func TestScanAndMap_updatesHostPortsOnSuccess(t *testing.T) {
-	ops := &mockOps{ports: []uint16{8080}}
+	ops := &mockOps{ports: []proxyportmapops.PortInfo{{Port: 8080, Process: "nginx"}}}
 	ppStore := portproxystate.NewStore(newTestLogger())
 
 	var registeredName string
@@ -219,11 +220,14 @@ func TestScanAndMap_updatesHostPortsOnSuccess(t *testing.T) {
 	if result.Ports[0].HostPort == 0 {
 		t.Errorf("expected HostPort to be set (proxy succeeded), got 0")
 	}
+	if result.Ports[0].Process != "nginx" {
+		t.Errorf("expected Process=%q, got %q", "nginx", result.Ports[0].Process)
+	}
 }
 
 // TestUnmap_clearsResult verifies that Unmap removes the stored result.
 func TestUnmap_clearsResult(t *testing.T) {
-	ops := &mockOps{ports: []uint16{9000}}
+	ops := &mockOps{ports: []proxyportmapops.PortInfo{{Port: 9000}}}
 	pp := &mockProxy{
 		ensureErr: errors.New("proxy not needed for this test"),
 		store:     portproxystate.NewStore(newTestLogger()),

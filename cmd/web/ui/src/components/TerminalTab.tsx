@@ -1,6 +1,41 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { listWebCatalog, provisionWeb, getWebSession, terminateWeb, scanPorts, getPortMappings, removePortMappings } from '../api.ts'
-import type { CatalogEntry, WebSession, PortScanResult } from '../types.ts'
+import type { CatalogEntry, MappedPort, WebSession, PortScanResult } from '../types.ts'
+
+// ── Port label helpers ────────────────────────────────────────────────────────
+
+const PROCESS_LABELS: Record<string, string> = {
+  python3: 'Python',
+  python: 'Python',
+  node: 'Node.js',
+  nodejs: 'Node.js',
+  nginx: 'Nginx',
+  apache2: 'Apache',
+  httpd: 'Apache',
+  ruby: 'Ruby',
+  java: 'Java',
+  go: 'Go',
+  deno: 'Deno',
+  bun: 'Bun',
+  uvicorn: 'Python (Uvicorn)',
+  gunicorn: 'Python (Gunicorn)',
+  php: 'PHP',
+  caddy: 'Caddy',
+  redis: 'Redis',
+  postgres: 'PostgreSQL',
+  postgresql: 'PostgreSQL',
+  mysql: 'MySQL',
+  mongod: 'MongoDB',
+  jupyter: 'Jupyter',
+}
+
+function friendlyPortLabel(p: MappedPort): string {
+  if (!p.process) return 'Service'
+  const key = p.process.toLowerCase()
+  if (PROCESS_LABELS[key]) return PROCESS_LABELS[key]
+  // Capitalise first letter for unknown processes
+  return p.process.charAt(0).toUpperCase() + p.process.slice(1)
+}
 
 // ── User-ID helpers ───────────────────────────────────────────────────────────
 
@@ -25,11 +60,12 @@ export default function TerminalTab() {
   const [loading, setLoading]     = useState(true)
   const [working, setWorking]     = useState(false)
   const [toast, setToast]         = useState('')
-  const [ttydReady, setTtydReady]     = useState(false)
-  const [portScan, setPortScan]       = useState<PortScanResult | null>(null)
-  const [scanning, setScanning]       = useState(false)
-  const pollRef                       = useRef<number | null>(null)
-  const ttydPollRef                   = useRef<number | null>(null)
+  const [ttydReady, setTtydReady]         = useState(false)
+  const [portScan, setPortScan]           = useState<PortScanResult | null>(null)
+  const [scanning, setScanning]           = useState(false)
+  const pollRef                           = useRef<number | null>(null)
+  const ttydPollRef                       = useRef<number | null>(null)
+  const portScanIntervalRef               = useRef<number | null>(null)
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -49,6 +85,13 @@ export default function TerminalTab() {
     if (ttydPollRef.current !== null) {
       clearInterval(ttydPollRef.current)
       ttydPollRef.current = null
+    }
+  }
+
+  const stopPortScanInterval = () => {
+    if (portScanIntervalRef.current !== null) {
+      clearInterval(portScanIntervalRef.current)
+      portScanIntervalRef.current = null
     }
   }
 
@@ -100,7 +143,31 @@ export default function TerminalTab() {
   useEffect(() => {
     setTtydReady(false)
     setPortScan(null)
+    stopPortScanInterval()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.container_id])
+
+  // Auto-scan ports every 2 minutes while the terminal is ready.
+  useEffect(() => {
+    if (!ttydReady || !session?.status || session.status !== 'ready') {
+      stopPortScanInterval()
+      return
+    }
+
+    const runScan = async () => {
+      try {
+        await scanPorts(userID)
+        const result = await getPortMappings(userID) as PortScanResult
+        setPortScan(result)
+      } catch {
+        // silent — don't toast on background scans
+      }
+    }
+
+    portScanIntervalRef.current = window.setInterval(runScan, 2 * 60 * 1000)
+    return stopPortScanInterval
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ttydReady, session?.status, userID])
 
   // ── Load catalog + check existing session on mount ────────────────────────
 
@@ -127,7 +194,7 @@ export default function TerminalTab() {
     }
 
     init()
-    return () => { cancelled = true; stopPoll(); stopTtydPoll() }
+    return () => { cancelled = true; stopPoll(); stopTtydPoll(); stopPortScanInterval() }
   }, [userID, startPoll])
 
   // ── Actions ──────────────────────────────────────────────────────────────────
@@ -153,6 +220,7 @@ export default function TerminalTab() {
       setSession(null)
       setTtydReady(false)
       setPortScan(null)
+      stopPortScanInterval()
       notify('Session terminated')
     } catch (e: unknown) {
       notify('Terminate failed: ' + (e instanceof Error ? e.message : String(e)))
@@ -344,19 +412,24 @@ export default function TerminalTab() {
                 )}
               </div>
               {portScan && portScan.ports.length > 0 && (
-                <div className="space-y-1">
-                  {portScan.ports.map((p) => (
-                    <div key={p.container_port} className="flex items-center gap-3 text-xs">
-                      <span className="text-zinc-400 dark:text-zinc-500 font-mono">
-                        :{p.container_port} → :{p.host_port}
-                      </span>
+                <div className="space-y-1.5">
+                  {[...portScan.ports].sort((a, b) => a.container_port - b.container_port).map((p) => (
+                    <div key={p.container_port} className="flex items-center justify-between gap-3 text-xs">
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-medium text-zinc-700 dark:text-zinc-200">
+                          {friendlyPortLabel(p)}
+                        </span>
+                        <span className="text-zinc-400 dark:text-zinc-500 font-mono text-[10px]">
+                          port {p.container_port}
+                        </span>
+                      </div>
                       <a
                         href={p.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-cyan-600 dark:text-cyan-400 hover:underline font-mono"
+                        className="shrink-0 px-2 py-0.5 rounded bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 font-medium"
                       >
-                        {p.url}
+                        Open ↗
                       </a>
                     </div>
                   ))}

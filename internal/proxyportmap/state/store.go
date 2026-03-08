@@ -12,6 +12,7 @@ import (
 type MappedPort struct {
 	ContainerPort uint16
 	HostPort      uint16
+	Process       string // program name, empty if unknown
 }
 
 // ScanResult records the most-recent port scan outcome for a user's container.
