@@ -5,6 +5,7 @@ import ContainersTab from './components/ContainersTab.tsx'
 import VolumesTab from './components/VolumesTab.tsx'
 import NetworksTab from './components/NetworksTab.tsx'
 import ExecsTab from './components/ExecsTab.tsx'
+import TerminalTab from './components/TerminalTab.tsx'
 import LogsPanel from './components/LogsPanel.tsx'
 import { health } from './api.ts'
 import type { Tab, HealthStatus } from './types.ts'
@@ -38,6 +39,7 @@ export default function App() {
         {activeTab === 'volumes'    && <VolumesTab />}
         {activeTab === 'networks'   && <NetworksTab />}
         {activeTab === 'execs'      && <ExecsTab />}
+        {activeTab === 'terminal'   && <TerminalTab />}
       </main>
 
       <LogsPanel />

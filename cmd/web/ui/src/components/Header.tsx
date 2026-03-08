@@ -7,6 +7,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'volumes',    label: 'Volumes' },
   { id: 'networks',   label: 'Networks' },
   { id: 'execs',      label: 'Execs' },
+  { id: 'terminal',   label: 'Terminal' },
 ]
 
 interface Props {

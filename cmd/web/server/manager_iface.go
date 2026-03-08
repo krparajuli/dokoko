@@ -21,6 +21,9 @@ import (
 	dockervolumestate "dokoko.ai/dokoko/internal/docker/volumes/state"
 	portproxyactor "dokoko.ai/dokoko/internal/portproxy/actor"
 	portproxystate "dokoko.ai/dokoko/internal/portproxy/state"
+	webcontainersactor "dokoko.ai/dokoko/internal/webcontainers/actor"
+	webcontainerscatalog "dokoko.ai/dokoko/internal/webcontainers/catalog"
+	webcontainersstate "dokoko.ai/dokoko/internal/webcontainers/state"
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerfilters "github.com/docker/docker/api/types/filters"
@@ -91,6 +94,14 @@ type portProxyClerk interface {
 	Store() *portproxystate.Store
 }
 
+// webContainersClerk is the subset of *webcontainersclerk.Clerk used by webcontainer handlers.
+type webContainersClerk interface {
+	Provision(ctx context.Context, userID, catalogID string) (*webcontainersactor.Ticket, error)
+	Terminate(ctx context.Context, userID string) (*webcontainersactor.Ticket, error)
+	GetSession(userID string) *webcontainersstate.UserSession
+	Catalog() []*webcontainerscatalog.ImageDef
+}
+
 // ── Top-level Manager interface ───────────────────────────────────────────────
 
 // Manager is the complete interface the handler depends on.
@@ -104,6 +115,7 @@ type Manager interface {
 	Networks() networkClerk
 	Exec() execActor
 	PortProxy() portProxyClerk
+	WebContainers() webContainersClerk
 	ImageState() stateSummarizer
 	ContainerState() stateSummarizer
 	VolumeState() stateSummarizer
@@ -127,8 +139,9 @@ func (a *managerAdapter) Containers() containerActor        { return a.m.Contain
 func (a *managerAdapter) Volumes() volumeClerk              { return a.m.Volumes() }
 func (a *managerAdapter) Networks() networkClerk            { return a.m.Networks() }
 func (a *managerAdapter) Exec() execActor                   { return a.m.Exec() }
-func (a *managerAdapter) PortProxy() portProxyClerk         { return a.m.PortProxy() }
-func (a *managerAdapter) ImageState() stateSummarizer       { return a.m.ImageState() }
+func (a *managerAdapter) PortProxy() portProxyClerk           { return a.m.PortProxy() }
+func (a *managerAdapter) WebContainers() webContainersClerk   { return a.m.WebContainers() }
+func (a *managerAdapter) ImageState() stateSummarizer         { return a.m.ImageState() }
 func (a *managerAdapter) ContainerState() stateSummarizer   { return a.m.ContainerState() }
 func (a *managerAdapter) VolumeState() stateSummarizer      { return a.m.VolumeState() }
 func (a *managerAdapter) NetworkState() stateSummarizer     { return a.m.NetworkState() }

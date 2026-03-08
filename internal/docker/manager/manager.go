@@ -63,6 +63,10 @@ import (
 	portproxyclerk "dokoko.ai/dokoko/internal/portproxy/clerk"
 	portproxyops "dokoko.ai/dokoko/internal/portproxy/ops"
 	portproxystate "dokoko.ai/dokoko/internal/portproxy/state"
+	webcontainersactor "dokoko.ai/dokoko/internal/webcontainers/actor"
+	webcontainersclerk "dokoko.ai/dokoko/internal/webcontainers/clerk"
+	webcontainersops "dokoko.ai/dokoko/internal/webcontainers/ops"
+	webcontainersstate "dokoko.ai/dokoko/internal/webcontainers/state"
 	"dokoko.ai/dokoko/pkg/logger"
 	dockerclient "github.com/docker/docker/client"
 )
@@ -113,6 +117,12 @@ type Manager struct {
 	portproxyStore *portproxystate.Store
 	portproxyActor *portproxyactor.Actor
 	portProxy      *portproxyclerk.Clerk
+
+	// Web-containers subsystem: state+store survive reconnects; actor+clerk recreated.
+	webContainersState *webcontainersstate.State
+	webContainersStore *webcontainersstate.Store
+	webContainersActor *webcontainersactor.Actor
+	webContainers      *webcontainersclerk.Clerk
 }
 
 // New creates a Manager, establishes the initial Docker connection, starts all
@@ -139,6 +149,9 @@ func New(ctx context.Context, log *logger.Logger, opts ...dockerclient.Opt) (*Ma
 
 		portproxyState: portproxystate.New(log),
 		portproxyStore: portproxystate.NewStore(log),
+
+		webContainersState: webcontainersstate.New(log),
+		webContainersStore: webcontainersstate.NewStore(log),
 	}
 
 	if err := m.connect(ctx); err != nil {
@@ -292,6 +305,14 @@ func (m *Manager) PortProxy() *portproxyclerk.Clerk {
 	return m.portProxy
 }
 
+// WebContainers returns the web-containers Clerk.
+// Provision, Terminate, GetSession, Catalog.
+func (m *Manager) WebContainers() *webcontainersclerk.Clerk {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.webContainers
+}
+
 // ── State accessors ───────────────────────────────────────────────────────────
 
 // ImageState returns the image operation state machine. Preserved across reconnects.
@@ -382,6 +403,11 @@ func (m *Manager) connect(ctx context.Context) error {
 		}
 	}
 
+	// Set up web-containers subsystem.
+	wcOps := webcontainersops.New(conn, m.log)
+	m.webContainersActor = webcontainersactor.New(wcOps, m.webContainersState, m.webContainersStore, m.log, nil)
+	m.webContainers = webcontainersclerk.New(m.webContainersActor, m.webContainersState, m.webContainersStore, m.log)
+
 	return nil
 }
 
@@ -434,6 +460,13 @@ func (m *Manager) shutdown() {
 	if m.portproxyActor != nil {
 		m.portproxyActor.Close()
 		m.portproxyActor = nil
+	}
+
+	// Shut down web-containers subsystem.
+	m.webContainers = nil
+	if m.webContainersActor != nil {
+		m.webContainersActor.Close()
+		m.webContainersActor = nil
 	}
 
 	m.log.Debug("manager: all subsystems shut down")

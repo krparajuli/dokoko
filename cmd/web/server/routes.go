@@ -50,6 +50,12 @@ func (s *Server) routes(uiDir string) http.Handler {
 	mux.HandleFunc("POST /api/execs/{id}/start", h.startExec)
 	mux.HandleFunc("GET /api/execs/{id}/inspect", h.inspectExec)
 
+	// Web Containers (user terminal sessions)
+	mux.HandleFunc("GET /api/webcontainers/catalog", h.listWebCatalog)
+	mux.HandleFunc("POST /api/webcontainers/provision", h.provisionWebContainer)
+	mux.HandleFunc("GET /api/webcontainers/session/{user_id}", h.getWebSession)
+	mux.HandleFunc("DELETE /api/webcontainers/session/{user_id}", h.terminateWebSession)
+
 	// State (all subsystems)
 	mux.HandleFunc("GET /api/state", h.getState)
 

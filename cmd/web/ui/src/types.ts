@@ -99,4 +99,23 @@ export interface HealthStatus {
   error?: string
 }
 
-export type Tab = 'images' | 'containers' | 'volumes' | 'networks' | 'execs'
+export type Tab = 'images' | 'containers' | 'volumes' | 'networks' | 'execs' | 'terminal'
+
+// ── Web Containers ─────────────────────────────────────────────────────────
+
+export interface CatalogEntry {
+  id: string
+  image: string
+  display_name: string
+  description: string
+}
+
+export interface WebSession {
+  user_id: string
+  catalog_id: string
+  container_name: string
+  container_id: string
+  status: 'provisioning' | 'ready' | 'terminating' | 'stopped' | 'error'
+  error?: string
+  terminal_url?: string
+}

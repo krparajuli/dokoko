@@ -60,3 +60,12 @@ export const inspectExec = (id: string) => get(`/execs/${id}/inspect`)
 
 // ── State ─────────────────────────────────────────────────────────────────────
 export const getState = () => get('/state')
+
+// ── Web Containers ────────────────────────────────────────────────────────────
+export const listWebCatalog   = () => get('/webcontainers/catalog')
+export const provisionWeb     = (user_id: string, catalog_id: string) =>
+  post('/webcontainers/provision', { user_id, catalog_id })
+export const getWebSession    = (user_id: string) =>
+  get(`/webcontainers/session/${encodeURIComponent(user_id)}`)
+export const terminateWeb     = (user_id: string) =>
+  del(`/webcontainers/session/${encodeURIComponent(user_id)}`)
