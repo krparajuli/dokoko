@@ -20,12 +20,14 @@ function getOrCreateUserID(): string {
 export default function TerminalTab() {
   const userID = useRef(getOrCreateUserID()).current
 
-  const [catalog, setCatalog]   = useState<CatalogEntry[]>([])
-  const [session, setSession]   = useState<WebSession | null>(null)
-  const [loading, setLoading]   = useState(true)
-  const [working, setWorking]   = useState(false)
-  const [toast, setToast]       = useState('')
-  const pollRef                 = useRef<number | null>(null)
+  const [catalog, setCatalog]     = useState<CatalogEntry[]>([])
+  const [session, setSession]     = useState<WebSession | null>(null)
+  const [loading, setLoading]     = useState(true)
+  const [working, setWorking]     = useState(false)
+  const [toast, setToast]         = useState('')
+  const [ttydReady, setTtydReady] = useState(false)
+  const pollRef                   = useRef<number | null>(null)
+  const ttydPollRef               = useRef<number | null>(null)
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,6 +40,13 @@ export default function TerminalTab() {
     if (pollRef.current !== null) {
       clearInterval(pollRef.current)
       pollRef.current = null
+    }
+  }
+
+  const stopTtydPoll = () => {
+    if (ttydPollRef.current !== null) {
+      clearInterval(ttydPollRef.current)
+      ttydPollRef.current = null
     }
   }
 
@@ -57,6 +66,39 @@ export default function TerminalTab() {
     }, 2_000)
   }, [userID])
 
+  // ── Poll ttyd endpoint until it responds (ttyd starts after Docker "ready") ──
+
+  useEffect(() => {
+    if (!session || session.status !== 'ready' || !session.terminal_path || ttydReady) {
+      return
+    }
+
+    const path = session.terminal_path
+
+    const check = async () => {
+      try {
+        const res = await fetch(path, { method: 'GET' })
+        if (res.ok) {
+          setTtydReady(true)
+          stopTtydPoll()
+        }
+      } catch {
+        // ttyd not up yet — keep polling
+      }
+    }
+
+    check() // immediate first attempt
+    ttydPollRef.current = window.setInterval(check, 3_000)
+
+    return stopTtydPoll
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.status, session?.terminal_path, session?.container_id, ttydReady])
+
+  // Reset ttydReady whenever the container changes so the next session re-polls.
+  useEffect(() => {
+    setTtydReady(false)
+  }, [session?.container_id])
+
   // ── Load catalog + check existing session on mount ────────────────────────
 
   useEffect(() => {
@@ -74,7 +116,6 @@ export default function TerminalTab() {
 
         if (sess.status === 'fulfilled') {
           setSession(sess.value)
-          // Still provisioning from a previous tab visit — resume polling.
           if (sess.value.status === 'provisioning') startPoll()
         }
       } finally {
@@ -83,7 +124,7 @@ export default function TerminalTab() {
     }
 
     init()
-    return () => { cancelled = true; stopPoll() }
+    return () => { cancelled = true; stopPoll(); stopTtydPoll() }
   }, [userID, startPoll])
 
   // ── Actions ──────────────────────────────────────────────────────────────────
@@ -107,6 +148,7 @@ export default function TerminalTab() {
     try {
       await terminateWeb(userID)
       setSession(null)
+      setTtydReady(false)
       notify('Session terminated')
     } catch (e: unknown) {
       notify('Terminate failed: ' + (e instanceof Error ? e.message : String(e)))
@@ -166,7 +208,7 @@ export default function TerminalTab() {
         </div>
       )}
 
-      {/* Session provisioning */}
+      {/* Session provisioning / terminating */}
       {session && (session.status === 'provisioning' || session.status === 'terminating') && (
         <div className="space-y-3">
           <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-300">
@@ -198,7 +240,7 @@ export default function TerminalTab() {
         </div>
       )}
 
-      {/* Session ready — embed ttyd via same-origin proxy */}
+      {/* Session ready — wait for ttyd, then embed iframe */}
       {session && session.status === 'ready' && session.terminal_path && (
         <div className="space-y-2">
           <div className="flex items-center justify-between flex-wrap gap-2">
@@ -208,14 +250,16 @@ export default function TerminalTab() {
               <span className="ml-2">{session.catalog_id}</span>
             </div>
             <div className="flex gap-2">
-              <a
-                href={session.terminal_path}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200"
-              >
-                ↗ Open in new tab
-              </a>
+              {ttydReady && (
+                <a
+                  href={session.terminal_path}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200"
+                >
+                  ↗ Open in new tab
+                </a>
+              )}
               <button
                 disabled={working}
                 onClick={handleTerminate}
@@ -225,15 +269,27 @@ export default function TerminalTab() {
               </button>
             </div>
           </div>
-          <div className="rounded border border-zinc-200 dark:border-zinc-700 overflow-hidden"
-               style={{ height: 'calc(100vh - 260px)', minHeight: 400 }}>
-            <iframe
-              src={session.terminal_path}
-              className="w-full h-full border-0"
-              title="Web Terminal"
-              allow="clipboard-read; clipboard-write"
-            />
-          </div>
+
+          {/* ttyd still starting */}
+          {!ttydReady && (
+            <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-300 py-6">
+              <Spinner />
+              <span className="text-xs">Starting terminal… checking every 3 s</span>
+            </div>
+          )}
+
+          {/* ttyd ready — show iframe */}
+          {ttydReady && (
+            <div className="rounded border border-zinc-200 dark:border-zinc-700 overflow-hidden"
+                 style={{ height: 'calc(100vh - 260px)', minHeight: 400 }}>
+              <iframe
+                src={session.terminal_path}
+                className="w-full h-full border-0"
+                title="Web Terminal"
+                allow="clipboard-read; clipboard-write"
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

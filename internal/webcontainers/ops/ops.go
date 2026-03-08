@@ -26,6 +26,12 @@ const (
 	// ManagedLabel marks containers as owned by the webcontainers subsystem.
 	ManagedLabel      = "dokoko.webcontainer"
 	ManagedLabelValue = "true"
+
+	// BasePathLabel stores the TTYD_BASE_PATH the container was created with
+	// so that ProvisionContainer can detect stale containers (e.g. ones
+	// provisioned before the reverse-proxy path was introduced) and recreate
+	// them with the correct base path.
+	BasePathLabel = "dokoko.ttyd-base-path"
 )
 
 // nonAlphanumRe strips characters that are invalid in Docker container names.
@@ -69,30 +75,39 @@ func (o *Ops) ProvisionContainer(ctx context.Context, userID string, def *webcon
 
 	cli := o.conn.Client()
 
+	// ttyd base path so the reverse proxy can forward requests without rewriting.
+	basePath := "/api/webcontainers/terminal/" + userID + "/"
+
 	// Check whether the container already exists.
 	existing, err := cli.ContainerInspect(ctx, name)
 	if err == nil {
-		// Container exists — if running, return its assigned port.
+		// Container exists — if running AND created with the current base path,
+		// return its assigned port without recreating.
 		if existing.State != nil && existing.State.Running {
-			hostPort, pErr := hostPortFromInspect(existing)
-			if pErr != nil {
-				return nil, fmt.Errorf("provision: container running but port lookup failed: %w", pErr)
+			var labelOK bool
+			if existing.Config != nil {
+				labelOK = existing.Config.Labels[BasePathLabel] == basePath
 			}
-			o.log.Info("webcontainer ops: reusing running container %s port=%d", name, hostPort)
-			return &ProvisionResult{
-				ContainerName: name,
-				ContainerID:   existing.ID,
-				HostPort:      hostPort,
-			}, nil
+			if labelOK {
+				hostPort, pErr := hostPortFromInspect(existing)
+				if pErr != nil {
+					return nil, fmt.Errorf("provision: container running but port lookup failed: %w", pErr)
+				}
+				o.log.Info("webcontainer ops: reusing running container %s port=%d", name, hostPort)
+				return &ProvisionResult{
+					ContainerName: name,
+					ContainerID:   existing.ID,
+					HostPort:      hostPort,
+				}, nil
+			}
+			// Base path mismatch (e.g. container pre-dates the proxy setup) —
+			// stop and recreate so ttyd is started with the correct --base-path.
+			o.log.Debug("webcontainer ops: container %s has stale base-path label, removing", name)
+		} else {
+			o.log.Debug("webcontainer ops: container %s stopped, removing before recreate", name)
 		}
-
-		// Exists but stopped — remove before recreating.
-		o.log.Debug("webcontainer ops: container %s stopped, removing before recreate", name)
 		_ = cli.ContainerRemove(ctx, name, dockercontainer.RemoveOptions{Force: true})
 	}
-
-	// ttyd base path so the reverse proxy can forward requests without rewriting.
-	basePath := "/api/webcontainers/terminal/" + userID + "/"
 
 	// Create the container.
 	containerCfg := &dockercontainer.Config{
@@ -103,6 +118,7 @@ func (o *Ops) ProvisionContainer(ctx context.Context, userID string, def *webcon
 		Labels: map[string]string{
 			ManagedLabel:  ManagedLabelValue,
 			"dokoko.user": userID,
+			BasePathLabel: basePath,
 		},
 	}
 	// Bind to 127.0.0.1 so ttyd is only reachable via the Go reverse proxy,
