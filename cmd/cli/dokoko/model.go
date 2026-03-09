@@ -52,7 +52,11 @@ type model struct {
 	storeVP viewport.Model
 	logsVP  viewport.Model
 	vpReady bool
+
+	confirmingQuit bool
 }
+
+type confirmTimeoutMsg struct{}
 
 func newModel(mgr *dockermanager.Manager, lb *logBuf) model {
 	return model{
@@ -89,6 +93,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.formActive = false
 		m.formErr = ""
 		return m, nil
+	case confirmTimeoutMsg:
+		m.confirmingQuit = false
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}

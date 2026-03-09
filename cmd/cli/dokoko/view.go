@@ -104,7 +104,15 @@ func (m model) View() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, cols...)
 	}
 
-	return strings.Join([]string{m.renderHeader(), body, m.renderFooter()}, "\n")
+	parts := []string{m.renderHeader(), body, m.renderFooter()}
+	if m.confirmingQuit {
+		banner := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("214")).Bold(true).
+			Width(m.termWidth).
+			Render("  ⚠  Press Ctrl-C again to exit.")
+		parts = append(parts, banner)
+	}
+	return strings.Join(parts, "\n")
 }
 
 // ── Header ────────────────────────────────────────────────────────────────────

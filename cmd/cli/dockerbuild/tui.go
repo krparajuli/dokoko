@@ -33,9 +33,12 @@ type model struct {
 
 	resultText string
 
-	rightVP viewport.Model
-	vpReady bool
+	rightVP        viewport.Model
+	vpReady        bool
+	confirmingQuit bool
 }
+
+type confirmTimeoutMsg struct{}
 
 func newModel(act *dockerbuildactor.Actor, st *dockerbuildstate.State) model {
 	return model{actor: act, state: st}
@@ -84,6 +87,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.leftView = viewResult
 		return m, nil
 
+	case confirmTimeoutMsg:
+		m.confirmingQuit = false
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -105,7 +112,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
-		return m, tea.Quit
+		if m.confirmingQuit {
+			return m, tea.Quit
+		}
+		m.confirmingQuit = true
+		return m, tea.Tick(5*time.Second, func(_ time.Time) tea.Msg { return confirmTimeoutMsg{} })
 	}
 	switch m.leftView {
 	case viewMenu:
@@ -253,7 +264,14 @@ func (m model) View() string {
 	}
 	left := m.renderLeft()
 	right := m.renderRight()
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", paneGap), right)
+	view := lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", paneGap), right)
+	if m.confirmingQuit {
+		banner := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("214")).Bold(true).
+			Render("  ⚠  Press Ctrl-C again to exit.")
+		view += "\n" + banner
+	}
+	return view
 }
 
 func (m model) renderLeft() string {

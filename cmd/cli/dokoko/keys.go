@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,7 +13,11 @@ import (
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 	if k == "ctrl+c" {
-		return m, tea.Quit
+		if m.confirmingQuit {
+			return m, tea.Quit
+		}
+		m.confirmingQuit = true
+		return m, tea.Tick(5*time.Second, func(_ time.Time) tea.Msg { return confirmTimeoutMsg{} })
 	}
 	if m.formActive {
 		return m.handleFormKey(msg)

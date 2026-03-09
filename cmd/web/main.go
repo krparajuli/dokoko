@@ -8,15 +8,14 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"dokoko.ai/dokoko/cmd/web/server"
 	authpkg "dokoko.ai/dokoko/internal/auth"
 	imagecfg "dokoko.ai/dokoko/internal/imageconfig"
 	dockermanager "dokoko.ai/dokoko/internal/docker/manager"
+	"dokoko.ai/dokoko/pkg/graceful"
 	"dokoko.ai/dokoko/pkg/logger"
 )
 
@@ -34,7 +33,7 @@ func main() {
 
 	log := logger.New(parseLevel(*logLvl))
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	mgr, err := dockermanager.New(ctx, log)
@@ -82,13 +81,39 @@ func main() {
 	}()
 
 	fmt.Printf("dokoko web UI → http://%s\n", *addr)
-	<-ctx.Done()
 
+	// Block until the server itself errors or the user confirms Ctrl-C twice.
+	select {
+	case <-ctx.Done():
+		// server error triggered cancel
+	case <-graceful.ExitCh("Press Ctrl-C again to exit."):
+		// user confirmed
+	}
+
+	// ── Print service state ──────────────────────────────────────────────────
+	fmt.Println("\nService state:")
+	graceful.PrintState("HTTP Server",    "running ("+*addr+")", log)
+	graceful.PrintState("Docker Manager", "connected",           log)
+	graceful.PrintState("Web Containers", "active",              log)
+	graceful.PrintState("Port Proxy",     "active",              log)
+	fmt.Println()
+
+	// ── Ordered shutdown ─────────────────────────────────────────────────────
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Error("shutdown error: %v", err)
-	}
+
+	graceful.Service("HTTP Server", log, func() {
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Error("HTTP Server shutdown error: %v", err)
+		}
+	})
+	graceful.Service("Docker Manager", log, func() {
+		if err := mgr.Close(); err != nil {
+			log.Error("Docker Manager shutdown error: %v", err)
+		}
+	})
+
+	graceful.Done(log)
 }
 
 func parseLevel(s string) logger.Level {

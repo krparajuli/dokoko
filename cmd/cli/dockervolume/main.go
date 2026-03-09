@@ -10,6 +10,7 @@ import (
 	dockervolumeactor "dokoko.ai/dokoko/internal/docker/volumes/actor"
 	dockervolumeops "dokoko.ai/dokoko/internal/docker/volumes/ops"
 	dockervolumestate "dokoko.ai/dokoko/internal/docker/volumes/state"
+	"dokoko.ai/dokoko/pkg/graceful"
 	"dokoko.ai/dokoko/pkg/logger"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -38,11 +39,21 @@ func main() {
 	ops := dockervolumeops.New(conn, log)
 	st := dockervolumestate.New(log)
 	act := dockervolumeactor.New(ops, st, log, nil)
-	defer act.Close()
 
 	p := tea.NewProgram(newModel(act, st), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "tui: %v\n", err)
+		act.Close()
 		os.Exit(1)
 	}
+
+	// ── Print service state ───────────────────────────────────────────────────
+	fmt.Println("\nService state:")
+	graceful.PrintState("Volume Actor",      "active", log)
+	graceful.PrintState("Docker connection", "active", log)
+	fmt.Println()
+
+	// ── Ordered shutdown ──────────────────────────────────────────────────────
+	graceful.Service("Volume Actor", log, func() { act.Close() })
+	graceful.Done(log)
 }

@@ -10,6 +10,7 @@ import (
 	dockerbuildactor "dokoko.ai/dokoko/internal/docker/builds/actor"
 	dockerbuildops "dokoko.ai/dokoko/internal/docker/builds/ops"
 	dockerbuildstate "dokoko.ai/dokoko/internal/docker/builds/state"
+	"dokoko.ai/dokoko/pkg/graceful"
 	"dokoko.ai/dokoko/pkg/logger"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -38,11 +39,21 @@ func main() {
 	ops := dockerbuildops.New(conn, log)
 	st := dockerbuildstate.New(log)
 	act := dockerbuildactor.New(ops, st, log, nil)
-	defer act.Close()
 
 	p := tea.NewProgram(newModel(act, st), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "tui: %v\n", err)
+		act.Close()
 		os.Exit(1)
 	}
+
+	// ── Print service state ───────────────────────────────────────────────────
+	fmt.Println("\nService state:")
+	graceful.PrintState("Build Actor",       "active", log)
+	graceful.PrintState("Docker connection", "active", log)
+	fmt.Println()
+
+	// ── Ordered shutdown ──────────────────────────────────────────────────────
+	graceful.Service("Build Actor", log, func() { act.Close() })
+	graceful.Done(log)
 }
