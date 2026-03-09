@@ -1,5 +1,6 @@
 # dokoko configuration
-#
+# COPY THIS to dokoko.yaml and edit it to your need
+
 # imagevars defines the environment variable schema for each web-container
 # catalog image.  Variables marked required must be set before a container
 # can be provisioned.  Variables with a defaultValue are pre-populated

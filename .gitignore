@@ -11,3 +11,6 @@ database/dokokostore.db
 
 
 bin/
+
+.env
+dokoko.yaml
