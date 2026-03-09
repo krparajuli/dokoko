@@ -12,9 +12,10 @@ import (
 
 // handler holds shared dependencies for all HTTP handlers.
 type handler struct {
-	mgr       Manager
-	log       *logger.Logger
-	authStore *authpkg.Store
+	mgr           Manager
+	log           *logger.Logger
+	authStore     *authpkg.Store
+	allowedImages []string // catalog IDs non-admin users may provision; nil = all
 }
 
 // jsonOK writes a 200 JSON response with the given payload.

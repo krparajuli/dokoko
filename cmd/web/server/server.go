@@ -14,17 +14,19 @@ import (
 
 // Server holds the HTTP server and all handler dependencies.
 type Server struct {
-	mgr       Manager
-	log       *logger.Logger
-	logBus    *logBus
-	httpSrv   *http.Server
-	authStore *authpkg.Store
+	mgr           Manager
+	log           *logger.Logger
+	logBus        *logBus
+	httpSrv       *http.Server
+	authStore     *authpkg.Store
+	allowedImages []string // catalog IDs non-admin users may provision; nil = all
 }
 
 // New creates a configured Server.
 // uiDir is the path to the built frontend files; empty string auto-detects.
 // authUsers is the list of users for authentication.
-func New(mgr *dockermanager.Manager, log *logger.Logger, addr, uiDir string, authUsers []authpkg.User) *Server {
+// allowedImages is the whitelist of catalog IDs for non-admin users; nil/empty = all allowed.
+func New(mgr *dockermanager.Manager, log *logger.Logger, addr, uiDir string, authUsers []authpkg.User, allowedImages []string) *Server {
 	bus := newLogBus()
 	store := authpkg.NewStore(authUsers)
 	go func() {
@@ -35,10 +37,11 @@ func New(mgr *dockermanager.Manager, log *logger.Logger, addr, uiDir string, aut
 		}
 	}()
 	s := &Server{
-		mgr:       newManagerAdapter(mgr),
-		log:       log,
-		logBus:    bus,
-		authStore: store,
+		mgr:           newManagerAdapter(mgr),
+		log:           log,
+		logBus:        bus,
+		authStore:     store,
+		allowedImages: allowedImages,
 	}
 	s.httpSrv = &http.Server{
 		Addr:    addr,

@@ -6,12 +6,14 @@ import (
 	"net/http/httputil"
 	"net/url"
 
+	authpkg "dokoko.ai/dokoko/internal/auth"
 	webcontainersstate "dokoko.ai/dokoko/internal/webcontainers/state"
 )
 
 // ── Catalog ───────────────────────────────────────────────────────────────────
 
 // listWebCatalog returns the ordered list of approved container images.
+// Non-admin users only see images on the --allowed-images whitelist (if set).
 //
 // GET /api/webcontainers/catalog
 func (h *handler) listWebCatalog(w http.ResponseWriter, r *http.Request) {
@@ -26,9 +28,14 @@ func (h *handler) listWebCatalog(w http.ResponseWriter, r *http.Request) {
 		DisplayName string `json:"display_name"`
 		Description string `json:"description"`
 	}
+
+	sess, _ := sessionFromContext(r.Context())
 	defs := wc.Catalog()
 	out := make([]catalogEntry, 0, len(defs))
 	for _, d := range defs {
+		if sess != nil && sess.Role != authpkg.RoleAdmin && !h.imageAllowedForUser(d.ID) {
+			continue
+		}
 		out = append(out, catalogEntry{
 			ID:          d.ID,
 			Image:       d.Image,
@@ -39,10 +46,27 @@ func (h *handler) listWebCatalog(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, out)
 }
 
+// imageAllowedForUser reports whether a catalog ID is on the allowed-images
+// whitelist.  If the whitelist is empty every image is allowed.
+func (h *handler) imageAllowedForUser(catalogID string) bool {
+	if len(h.allowedImages) == 0 {
+		return true
+	}
+	for _, id := range h.allowedImages {
+		if id == catalogID {
+			return true
+		}
+	}
+	return false
+}
+
 // ── Provision ─────────────────────────────────────────────────────────────────
 
 // provisionWebContainer asynchronously provisions a web-terminal container.
 // If the user already has a running container it is reused.
+//
+// Non-admin users: must use a whitelisted catalog ID and may only hold one
+// active session at a time.
 //
 // POST /api/webcontainers/provision
 // Body: {"user_id":"alice","catalog_id":"ubuntu"}
@@ -60,6 +84,21 @@ func (h *handler) provisionWebContainer(w http.ResponseWriter, r *http.Request) 
 	if wc == nil {
 		jsonErr(w, http.StatusServiceUnavailable, "webcontainers not available")
 		return
+	}
+
+	// Enforce whitelist and single-container limit for non-admin users.
+	if sess, ok := sessionFromContext(r.Context()); ok && sess.Role != authpkg.RoleAdmin {
+		if !h.imageAllowedForUser(body.CatalogID) {
+			jsonErr(w, http.StatusForbidden, "image not available for your account")
+			return
+		}
+		existing := wc.GetSession(body.UserID)
+		if existing != nil &&
+			existing.Status != webcontainersstate.StatusStopped &&
+			existing.Status != webcontainersstate.StatusError {
+			jsonErr(w, http.StatusConflict, "you already have an active container — terminate it first")
+			return
+		}
 	}
 
 	ctx, cancel := opCtx(r)

@@ -8,7 +8,7 @@ import (
 
 func (s *Server) routes(uiDir string) http.Handler {
 	mux := http.NewServeMux()
-	h := &handler{mgr: s.mgr, log: s.log, authStore: s.authStore}
+	h := &handler{mgr: s.mgr, log: s.log, authStore: s.authStore, allowedImages: s.allowedImages}
 
 	// Auth routes (no authentication required)
 	mux.HandleFunc("POST /api/auth/login", h.loginHandler)

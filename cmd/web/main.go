@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,8 +23,9 @@ func main() {
 	addr      := flag.String("addr", ":8888", "HTTP server address")
 	logLvl    := flag.String("log", "info", "log level: error,warn,info,debug,trace")
 	uiDir     := flag.String("ui-dir", "", "path to built UI files (ui/dist); auto-detected if empty")
-	adminUser := flag.String("admin-user", "admin", "admin username")
-	adminPass := flag.String("admin-password", "admin", "admin password")
+	adminUser     := flag.String("admin-user", "admin", "admin username")
+	adminPass     := flag.String("admin-password", "admin", "admin password")
+	allowedImages := flag.String("allowed-images", "", "comma-separated catalog IDs available to non-admin users (empty = all)")
 	flag.Parse()
 
 	log := logger.New(parseLevel(*logLvl))
@@ -45,7 +47,16 @@ func main() {
 		{Username: *adminUser, Password: *adminPass, Role: authpkg.RoleAdmin},
 	}
 
-	srv := server.New(mgr, log, *addr, *uiDir, users)
+	var allowed []string
+	if *allowedImages != "" {
+		for _, s := range strings.Split(*allowedImages, ",") {
+			if t := strings.TrimSpace(s); t != "" {
+				allowed = append(allowed, t)
+			}
+		}
+	}
+
+	srv := server.New(mgr, log, *addr, *uiDir, users, allowed)
 	log.SetOutput(srv.LogWriter())
 
 	go func() {
