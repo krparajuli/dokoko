@@ -14,6 +14,7 @@ func (s *Server) routes(uiDir string) http.Handler {
 	mux.HandleFunc("POST /api/auth/login", h.loginHandler)
 	mux.HandleFunc("POST /api/auth/logout", h.logoutHandler)
 	mux.HandleFunc("GET /api/auth/me", h.meHandler)
+	mux.HandleFunc("POST /api/auth/register", h.registerHandler)
 
 	// Health / connection
 	mux.HandleFunc("GET /api/health", h.health)

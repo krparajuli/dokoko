@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	dockermanager "dokoko.ai/dokoko/internal/docker/manager"
 	"dokoko.ai/dokoko/pkg/graceful"
 	"dokoko.ai/dokoko/pkg/logger"
+	_ "modernc.org/sqlite"
 )
 
 func main() {
@@ -25,15 +27,14 @@ func main() {
 	// Priority (highest → lowest): CLI flags > real env vars > .env file > hardcoded defaults.
 	loadDotenv(".env")
 
-	addr          := flag.String("addr",            envOr("DOKOKO_ADDR", ":8888"),                                       "HTTP server address")
-	logLvl        := flag.String("log",             envOr("DOKOKO_LOG_LEVEL", "info"),                                   "log level: error,warn,info,debug,trace")
-	uiDir         := flag.String("ui-dir",          envOr("DOKOKO_UI_DIR", ""),                                          "path to built UI files (ui/dist); auto-detected if empty")
-	adminUser     := flag.String("admin-user",      envOr("DOKOKO_ADMIN_USER", "admin"),                                 "admin username")
-	adminPass     := flag.String("admin-password",  envOr("DOKOKO_ADMIN_PASSWORD", "admin"),                             "admin password")
-	userName      := flag.String("user-name",       envOr("DOKOKO_USER_NAME", "user"),                                   "default non-admin username")
-	userPass      := flag.String("user-password",   envOr("DOKOKO_USER_PASSWORD", "password"),                           "default non-admin password")
-	allowedImages := flag.String("allowed-images",  envOr("DOKOKO_ALLOWED_IMAGES", "claudewebd,gemini,codex,opencode"),  "comma-separated catalog IDs available to non-admin users (empty = all)")
-	configFile    := flag.String("config",          envOr("DOKOKO_CONFIG", "dokoko.yaml"),                               "path to YAML config file (image env-var schemas, etc.)")
+	addr          := flag.String("addr",           envOr("DOKOKO_ADDR", ":8888"),                                       "HTTP server address")
+	logLvl        := flag.String("log",            envOr("DOKOKO_LOG_LEVEL", "info"),                                   "log level: error,warn,info,debug,trace")
+	uiDir         := flag.String("ui-dir",         envOr("DOKOKO_UI_DIR", ""),                                          "path to built UI files (ui/dist); auto-detected if empty")
+	dbPath        := flag.String("db",             envOr("DOKOKO_DB_PATH", "dokoko.db"),                                "path to SQLite database file")
+	adminUser     := flag.String("admin-user",     envOr("DOKOKO_ADMIN_USER", "admin"),                                 "admin username (seeded on first run)")
+	adminPass     := flag.String("admin-password", envOr("DOKOKO_ADMIN_PASSWORD", "admin"),                             "admin password (seeded on first run)")
+	allowedImages := flag.String("allowed-images", envOr("DOKOKO_ALLOWED_IMAGES", "claudewebd,gemini,codex,opencode"), "comma-separated catalog IDs available to non-admin users (empty = all)")
+	configFile    := flag.String("config",         envOr("DOKOKO_CONFIG", "dokoko.yaml"),                               "path to YAML config file (image env-var schemas, etc.)")
 	flag.Parse()
 
 	log := logger.New(parseLevel(*logLvl))
@@ -41,23 +42,53 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// ── Open / create SQLite database ────────────────────────────────────────
+	db, err := sql.Open("sqlite", *dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to open database %s: %v\n", *dbPath, err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	if err := db.Ping(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to connect to database %s: %v\n", *dbPath, err)
+		os.Exit(1)
+	}
+
+	// ── Run schema migrations ────────────────────────────────────────────────
+	if err := authpkg.RunMigrations(db); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to run migrations: %v\n", err)
+		os.Exit(1)
+	}
+
+	// ── Seed admin on first run ──────────────────────────────────────────────
+	store := authpkg.New(db)
+	var userCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&userCount); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to count users: %v\n", err)
+		os.Exit(1)
+	}
+	if userCount == 0 {
+		if *adminUser == "admin" && *adminPass == "admin" {
+			log.Warn("seeding default admin credentials — set DOKOKO_ADMIN_USER and DOKOKO_ADMIN_PASSWORD in production")
+		}
+		if err := store.SeedUser(authpkg.User{
+			Username: *adminUser,
+			Password: *adminPass,
+			Role:     authpkg.RoleAdmin,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to seed admin user: %v\n", err)
+			os.Exit(1)
+		}
+		log.Info("seeded admin user %q", *adminUser)
+	}
+
 	mgr, err := dockermanager.New(ctx, log)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to connect to Docker: %v\n", err)
 		os.Exit(1)
 	}
 	defer mgr.Close()
-
-	if *adminUser == "admin" && *adminPass == "admin" {
-		log.Warn("using default admin credentials — set --admin-user and --admin-password in production")
-	}
-	if *userPass == "password" {
-		log.Warn("using default user credentials — set --user-name and --user-password in production")
-	}
-	users := []authpkg.User{
-		{Username: *adminUser, Password: *adminPass, Role: authpkg.RoleAdmin},
-		{Username: *userName, Password: *userPass, Role: authpkg.RoleUser},
-	}
 
 	var allowed []string
 	if *allowedImages != "" {
@@ -75,7 +106,7 @@ func main() {
 	}
 	log.Info("loaded image config from %s (%d image var schema(s))", *configFile, len(imgCfg.ImageVars))
 
-	srv := server.New(mgr, log, *addr, *uiDir, users, allowed, imgCfg)
+	srv := server.New(mgr, log, *addr, *uiDir, db, allowed, imgCfg)
 	log.SetOutput(srv.LogWriter())
 
 	go func() {

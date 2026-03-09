@@ -4,7 +4,7 @@ const MAX_LINES = 500
 
 export default function LogsPanel() {
   const [lines, setLines] = useState<string[]>([])
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
 

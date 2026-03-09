@@ -2,13 +2,17 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	authpkg "dokoko.ai/dokoko/internal/auth"
 	"dokoko.ai/dokoko/pkg/logger"
 )
+
+var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
 const (
 	sessionCookieName = "dokoko_session"
@@ -79,14 +83,71 @@ func (h *handler) meHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// registerHandler handles POST /api/auth/register (no auth required).
+// Body: {"username":"...","password":"...","confirm_password":"..."}
+// On success: creates user, creates session, sets httpOnly cookie, returns {username, role}.
+func (h *handler) registerHandler(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Username        string `json:"username"`
+		Password        string `json:"password"`
+		ConfirmPassword string `json:"confirm_password"`
+	}
+	if err := decode(r, &body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if l := len(body.Username); l < 3 || l > 32 {
+		jsonErr(w, http.StatusBadRequest, "username must be 3–32 characters")
+		return
+	}
+	if !usernameRe.MatchString(body.Username) {
+		jsonErr(w, http.StatusBadRequest, "username may only contain letters, digits, and underscores")
+		return
+	}
+	if len(body.Password) < 8 {
+		jsonErr(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+	if body.Password != body.ConfirmPassword {
+		jsonErr(w, http.StatusBadRequest, "passwords do not match")
+		return
+	}
+	if err := h.authStore.CreateUser(authpkg.User{
+		Username: body.Username,
+		Password: body.Password,
+		Role:     authpkg.RoleUser,
+	}); err != nil {
+		if errors.Is(err, authpkg.ErrUserExists) {
+			jsonErr(w, http.StatusConflict, "username already taken")
+			return
+		}
+		jsonErr(w, http.StatusInternalServerError, "failed to create user")
+		return
+	}
+	sess := h.authStore.CreateSession(body.Username, authpkg.RoleUser, sessionTTL)
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    sess.Token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(sessionTTL.Seconds()),
+	})
+	jsonOK(w, map[string]string{
+		"username": body.Username,
+		"role":     string(authpkg.RoleUser),
+	})
+}
+
 // authMiddleware validates session cookies for all /api/* routes except the
 // login endpoint, health check, and OPTIONS preflight requests.
 func authMiddleware(store *authpkg.Store, log *logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Pass through: preflight, login, health, and non-API paths.
+			// Pass through: preflight, login, register, health, and non-API paths.
 			if r.Method == http.MethodOptions ||
 				r.URL.Path == "/api/auth/login" ||
+				r.URL.Path == "/api/auth/register" ||
 				r.URL.Path == "/api/health" ||
 				!strings.HasPrefix(r.URL.Path, "/api/") {
 				next.ServeHTTP(w, r)

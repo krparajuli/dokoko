@@ -33,7 +33,7 @@ export default function Header({ activeTab, onTabChange, dockerStatus, viewMode,
       <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center gap-3">
           <span className="text-green-600 dark:text-green-400 font-bold text-lg tracking-tight">dokoko</span>
-          <span className="text-zinc-400 dark:text-zinc-600 text-sm">docker manager</span>
+          <span className="text-zinc-400 dark:text-zinc-600 text-sm">Your Personal AI Coder in the Web</span>
         </div>
         <div className="flex items-center gap-4 text-xs">
           <div className="flex items-center gap-2">

@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"net/http"
 	"time"
@@ -26,12 +27,12 @@ type Server struct {
 
 // New creates a configured Server.
 // uiDir is the path to the built frontend files; empty string auto-detects.
-// authUsers is the list of users for authentication.
+// db is the open SQLite database used for user and session storage.
 // allowedImages is the whitelist of catalog IDs for non-admin users; nil/empty = all allowed.
 // imageConfig holds per-image env-var schemas loaded from the YAML config file.
-func New(mgr *dockermanager.Manager, log *logger.Logger, addr, uiDir string, authUsers []authpkg.User, allowedImages []string, imageConfig *imagecfg.Config) *Server {
+func New(mgr *dockermanager.Manager, log *logger.Logger, addr, uiDir string, db *sql.DB, allowedImages []string, imageConfig *imagecfg.Config) *Server {
 	bus := newLogBus()
-	store := authpkg.NewStore(authUsers)
+	store := authpkg.New(db)
 	go func() {
 		t := time.NewTicker(10 * time.Minute)
 		defer t.Stop()

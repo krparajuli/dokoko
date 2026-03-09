@@ -9,12 +9,14 @@ import TerminalTab from './components/TerminalTab.tsx'
 import UsersTab from './components/UsersTab.tsx'
 import LogsPanel from './components/LogsPanel.tsx'
 import LoginPage from './components/LoginPage.tsx'
+import RegisterPage from './components/RegisterPage.tsx'
 import { AuthProvider, useAuth } from './context/AuthContext.tsx'
 import { health } from './api.ts'
 import type { Tab, HealthStatus } from './types.ts'
 
 function AppInner() {
   const { user, loading } = useAuth()
+  const [authView, setAuthView] = useState<'login' | 'register'>('login')
   const [activeTab, setActiveTab] = useState<Tab>('images')
   const [dockerStatus, setDockerStatus] = useState<HealthStatus>({ ok: false, docker: false })
   const [viewMode, setViewMode] = useState<'admin' | 'user'>(
@@ -51,7 +53,9 @@ function AppInner() {
   }
 
   if (!user) {
-    return <LoginPage />
+    return authView === 'register'
+      ? <RegisterPage onShowLogin={() => setAuthView('login')} />
+      : <LoginPage onShowRegister={() => setAuthView('register')} />
   }
 
   // In user view, force terminal tab

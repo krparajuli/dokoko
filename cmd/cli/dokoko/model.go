@@ -65,7 +65,7 @@ func newModel(mgr *dockermanager.Manager, lb *logBuf) model {
 		showActions: true,
 		showState:   true,
 		showStore:   true,
-		showLogs:    false,
+		showLogs:    true,
 	}
 }
 

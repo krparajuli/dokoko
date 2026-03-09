@@ -19,10 +19,12 @@ const post = <T>(path: string, body?: unknown) => request<T>('POST', path, body)
 const del  = <T>(path: string) => request<T>('DELETE', path)
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
-export const loginApi  = (username: string, password: string) =>
+export const loginApi    = (username: string, password: string) =>
   post<{ username: string; role: string }>('/auth/login', { username, password })
-export const logoutApi = () => post('/auth/logout')
-export const meApi     = () => get<{ username: string; role: string }>('/auth/me')
+export const logoutApi   = () => post('/auth/logout')
+export const meApi       = () => get<{ username: string; role: string }>('/auth/me')
+export const registerApi = (username: string, password: string, confirm_password: string) =>
+  post<{ username: string; role: string }>('/auth/register', { username, password, confirm_password })
 
 // ── Health ───────────────────────────────────────────────────────────────────
 export const health = () => get<{ ok: boolean; docker: boolean; error?: string }>('/health')
