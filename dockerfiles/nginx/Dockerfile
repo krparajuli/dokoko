@@ -14,14 +14,31 @@ RUN apk add --no-cache \
     bash \
     wget
 
-# Download ttyd
-RUN curl -L https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 -o /usr/local/bin/ttyd && \
+# Install ttyd 1.7.7 from GitHub releases (arch-aware)
+RUN set -eux; \
+    ARCH=$(uname -m); \
+    case "$ARCH" in \
+      x86_64)  TTYD_ARCH="x86_64" ;; \
+      aarch64) TTYD_ARCH="aarch64" ;; \
+      armv7l)  TTYD_ARCH="arm" ;; \
+      *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.${TTYD_ARCH}" \
+         -o /usr/local/bin/ttyd && \
     chmod +x /usr/local/bin/ttyd
 
-# Install Go 1.22.0
-RUN wget https://go.dev/dl/go1.22.0.linux-amd64.tar.gz && \
-    tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz && \
-    rm go1.22.0.linux-amd64.tar.gz
+# Install Go 1.22.0 (arch-aware)
+RUN set -eux; \
+    ARCH=$(uname -m); \
+    case "$ARCH" in \
+      x86_64)  GO_ARCH="amd64" ;; \
+      aarch64) GO_ARCH="arm64" ;; \
+      armv7l)  GO_ARCH="armv6l" ;; \
+      *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;; \
+    esac; \
+    wget -q "https://go.dev/dl/go1.22.0.linux-${GO_ARCH}.tar.gz" -O /tmp/go.tar.gz && \
+    tar -C /usr/local -xzf /tmp/go.tar.gz && \
+    rm /tmp/go.tar.gz
 
 # Set Go environment variables
 ENV PATH="/usr/local/go/bin:${PATH}"

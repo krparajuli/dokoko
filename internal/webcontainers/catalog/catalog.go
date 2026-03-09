@@ -57,6 +57,39 @@ exec ttyd -W -p 7681 --base-path "${TTYD_BASE_PATH:-/}" tmux new -A -s main
 // Catalog is the ordered list of images users can choose from.
 var Catalog = []*ImageDef{
 	{
+		// claudewebd is a pre-baked image with ttyd, Claude Code, Go, Node.js,
+		// and Python installed.  Its ENTRYPOINT already starts ttyd + tmux +
+		// claude, so StartScript is empty — the image runs its own entrypoint.
+		ID:          "claudewebd",
+		Image:       "claudewebd:latest",
+		DisplayName: "Claude Code",
+		Description: "Full dev environment: Claude Code, Go 1.22, Node 20, Python 3. Terminal drops you into an interactive Claude session.",
+	},
+	{
+		// geminid is a pre-baked image with ttyd, Gemini CLI, Go, Node.js,
+		// and Python installed.  Set GEMINI_API_KEY via the env vars panel.
+		ID:          "gemini",
+		Image:       "geminid:latest",
+		DisplayName: "Gemini CLI",
+		Description: "Google Gemini CLI coding agent. Set GEMINI_API_KEY via the environment variables panel before starting.",
+	},
+	{
+		// codexd is a pre-baked image with ttyd, OpenAI Codex CLI, Go, Node.js,
+		// and Python installed.  Set OPENAI_API_KEY via the env vars panel.
+		ID:          "codex",
+		Image:       "codexd:latest",
+		DisplayName: "Codex CLI",
+		Description: "OpenAI Codex CLI coding agent. Set OPENAI_API_KEY via the environment variables panel before starting.",
+	},
+	{
+		// opencode is a pre-baked image with ttyd, OpenCode, Go, Node.js,
+		// and Python installed.  Configure your AI provider keys via the env vars panel.
+		ID:          "opencode",
+		Image:       "opencode:latest",
+		DisplayName: "OpenCode",
+		Description: "OpenCode AI coding assistant. Configure your provider API keys via the environment variables panel before starting.",
+	},
+	{
 		ID:          "ubuntu",
 		Image:       "ubuntu:22.04",
 		DisplayName: "Ubuntu 22.04",

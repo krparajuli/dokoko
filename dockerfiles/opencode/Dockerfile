@@ -1,5 +1,8 @@
 FROM ubuntu:22.04
 
+# Prevent interactive prompts during installation
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install dependencies and development tools
 RUN apt-get update && \
     apt-get install -y \
@@ -9,6 +12,7 @@ RUN apt-get update && \
     vim \
     git \
     build-essential \
+    sudo \
     wget \
     python3 \
     python3-pip \
@@ -46,11 +50,6 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOPATH="/root/go"
 ENV PATH="${GOPATH}/bin:${PATH}"
 
-# Install common Go tools
-RUN go install golang.org/x/tools/gopls@latest && \
-    go install github.com/go-delve/delve/cmd/dlv@latest && \
-    go install honnef.co/go/tools/cmd/staticcheck@latest
-
 # Install NVM and Node.js
 ENV NVM_DIR="/root/.nvm"
 ENV NODE_VERSION="20.11.0"
@@ -63,6 +62,9 @@ RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | b
 # Add NVM to PATH
 ENV PATH="${NVM_DIR}/versions/node/v${NODE_VERSION}/bin:${PATH}"
 
+# Install OpenCode
+RUN . "$NVM_DIR/nvm.sh" && npm install -g opencode-ai
+
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
@@ -73,11 +75,12 @@ RUN mkdir -p /workspace && chmod 777 /workspace
 # Set environment variables
 ENV TTYD_PORT=7681
 ENV TERM=xterm-256color
+ENV PYTHONUNBUFFERED=1
 
 # Set working directory
 WORKDIR /workspace
 
-# Expose ttyd port (will be mapped by Docker manager)
+# Expose ttyd port
 EXPOSE 7681
 
 ENTRYPOINT ["/entrypoint.sh"]

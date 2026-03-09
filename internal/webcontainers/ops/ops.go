@@ -125,7 +125,6 @@ func (o *Ops) ProvisionContainer(ctx context.Context, userID string, def *webcon
 	}
 	containerCfg := &dockercontainer.Config{
 		Image:        def.Image,
-		Cmd:          []string{"sh", "-c", def.StartScript},
 		ExposedPorts: dockernat.PortSet{TtydPort: {}},
 		Env:          env,
 		Labels: map[string]string{
@@ -133,6 +132,11 @@ func (o *Ops) ProvisionContainer(ctx context.Context, userID string, def *webcon
 			"dokoko.user": userID,
 			BasePathLabel: basePath,
 		},
+	}
+	// Only override Cmd when StartScript is set. An empty StartScript means
+	// "use the image's own ENTRYPOINT/CMD as-is" (e.g. a pre-baked image).
+	if def.StartScript != "" {
+		containerCfg.Cmd = []string{"sh", "-c", def.StartScript}
 	}
 	// Bind to 127.0.0.1 so ttyd is only reachable via the Go reverse proxy,
 	// not directly from the outside world.
