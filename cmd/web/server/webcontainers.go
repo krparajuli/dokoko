@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -10,6 +12,27 @@ import (
 	authpkg "dokoko.ai/dokoko/internal/auth"
 	webcontainersstate "dokoko.ai/dokoko/internal/webcontainers/state"
 )
+
+// nerdFontCSS is injected into every ttyd HTML response so the xterm.js
+// terminal can render Nerd Font icons, powerline symbols, and box-drawing
+// characters correctly.  The font is loaded from jsDelivr's GitHub CDN,
+// which caches and serves the official nerd-fonts repository assets.
+const nerdFontCSS = `<style>
+@font-face {
+    font-family: "JetBrainsMono Nerd Font Mono";
+    src: url("https://cdn.jsdelivr.net/gh/ryanoasis/nerd-fonts@v3.3.0/patched-fonts/JetBrainsMono/Mono/JetBrainsMonoNLNerdFontMono-Regular.ttf") format("truetype");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "JetBrainsMono Nerd Font Mono";
+    src: url("https://cdn.jsdelivr.net/gh/ryanoasis/nerd-fonts@v3.3.0/patched-fonts/JetBrainsMono/Mono/JetBrainsMonoNLNerdFontMono-Bold.ttf") format("truetype");
+    font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+}
+</style>`
 
 func joinStrings(ss []string) string { return strings.Join(ss, ", ") }
 
@@ -300,6 +323,28 @@ func (h *handler) proxyWebTerminal(w http.ResponseWriter, r *http.Request) {
 	proxy.Director = func(req *http.Request) {
 		defaultDirector(req)
 		req.Host = target.Host
+		// Remove Accept-Encoding so ttyd always returns uncompressed responses,
+		// which lets ModifyResponse splice in the NerdFont CSS without having to
+		// deal with gzip/zstd decoding.
+		req.Header.Del("Accept-Encoding")
+	}
+
+	// Inject NerdFont CSS into every HTML response so xterm.js can render
+	// Nerd Font glyphs, powerline symbols, and box-drawing characters.
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+			return nil
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return err
+		}
+		body = bytes.Replace(body, []byte("</head>"), []byte(nerdFontCSS+"</head>"), 1)
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		resp.ContentLength = int64(len(body))
+		resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
+		return nil
 	}
 
 	// Suppress default error logging; surface errors as plain 502s instead.

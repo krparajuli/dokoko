@@ -26,24 +26,39 @@ type ImageDef struct {
 	StartScript string
 }
 
-// debianScript installs ttyd + tmux via apt-get, then starts ttyd.
+// debianScript installs ttyd + tmux via apt-get, then starts ttyd with Nerd
+// Font and true-colour terminal support.  The Go proxy injects the
+// JetBrainsMono Nerd Font CSS via CDN into ttyd's HTML, so xterm.js can
+// render icons and powerline glyphs without needing the font on disk.
 const debianScript = `
 set -e
 export DEBIAN_FRONTEND=noninteractive
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export COLORTERM=truecolor
 apt-get update -qq
-apt-get install -y -qq tmux curl
+apt-get install -y -qq tmux curl locales
+locale-gen en_US.UTF-8
 ARCH=$(uname -m)
 if [ ! -x /usr/local/bin/ttyd ]; then
   curl -fsSL -o /usr/local/bin/ttyd \
     "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${ARCH}"
   chmod +x /usr/local/bin/ttyd
 fi
-exec ttyd -W -p 7681 --base-path "${TTYD_BASE_PATH:-/}" tmux new -A -s main
+printf 'set -g default-terminal "tmux-256color"\nset -ga terminal-overrides ",xterm-256color:Tc"\n' \
+  > ~/.tmux.conf
+exec ttyd -W -p 7681 --base-path "${TTYD_BASE_PATH:-/}" \
+  -t 'fontFamily=JetBrainsMono Nerd Font Mono, monospace' \
+  -t fontSize=15 \
+  tmux new -A -s main
 `
 
-// alpineScript installs ttyd + tmux via apk, then starts ttyd.
+// alpineScript installs ttyd + tmux via apk, then starts ttyd with Nerd Font
+// and true-colour terminal support.
 const alpineScript = `
 set -e
+export LANG=C.UTF-8
+export COLORTERM=truecolor
 apk add --no-cache tmux curl
 ARCH=$(uname -m)
 if [ ! -x /usr/local/bin/ttyd ]; then
@@ -51,7 +66,12 @@ if [ ! -x /usr/local/bin/ttyd ]; then
     "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${ARCH}"
   chmod +x /usr/local/bin/ttyd
 fi
-exec ttyd -W -p 7681 --base-path "${TTYD_BASE_PATH:-/}" tmux new -A -s main
+printf 'set -g default-terminal "tmux-256color"\nset -ga terminal-overrides ",xterm-256color:Tc"\n' \
+  > ~/.tmux.conf
+exec ttyd -W -p 7681 --base-path "${TTYD_BASE_PATH:-/}" \
+  -t 'fontFamily=JetBrainsMono Nerd Font Mono, monospace' \
+  -t fontSize=15 \
+  tmux new -A -s main
 `
 
 // Catalog is the ordered list of images users can choose from.

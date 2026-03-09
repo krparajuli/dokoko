@@ -119,6 +119,7 @@ RUN apt-get update && \
 # Set environment variables
 ENV TTYD_PORT=7681
 ENV TERM=xterm-256color
+ENV COLORTERM=truecolor
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 
