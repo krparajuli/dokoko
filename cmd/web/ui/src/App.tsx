@@ -7,12 +7,18 @@ import NetworksTab from './components/NetworksTab.tsx'
 import ExecsTab from './components/ExecsTab.tsx'
 import TerminalTab from './components/TerminalTab.tsx'
 import LogsPanel from './components/LogsPanel.tsx'
+import LoginPage from './components/LoginPage.tsx'
+import { AuthProvider, useAuth } from './context/AuthContext.tsx'
 import { health } from './api.ts'
 import type { Tab, HealthStatus } from './types.ts'
 
-export default function App() {
+function AppInner() {
+  const { user, loading } = useAuth()
   const [activeTab, setActiveTab] = useState<Tab>('images')
   const [dockerStatus, setDockerStatus] = useState<HealthStatus>({ ok: false, docker: false })
+  const [viewMode, setViewMode] = useState<'admin' | 'user'>(
+    () => (user?.role === 'admin' ? 'admin' : 'user')
+  )
 
   const checkHealth = useCallback(async () => {
     try {
@@ -24,25 +30,60 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!user) return
     checkHealth()
     const id = setInterval(checkHealth, 10_000)
     return () => clearInterval(id)
-  }, [checkHealth])
+  }, [checkHealth, user])
+
+  // Reset viewMode when user changes
+  useEffect(() => {
+    setViewMode(user?.role === 'admin' ? 'admin' : 'user')
+  }, [user])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-zinc-100 dark:bg-zinc-950">
+        <span className="inline-block w-6 h-6 border-2 border-zinc-300 dark:border-zinc-600 border-t-green-500 dark:border-t-green-400 rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <LoginPage />
+  }
+
+  // In user view, force terminal tab
+  const effectiveTab = viewMode === 'user' ? 'terminal' : activeTab
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      <Header activeTab={activeTab} onTabChange={setActiveTab} dockerStatus={dockerStatus} />
+      <Header
+        activeTab={effectiveTab}
+        onTabChange={setActiveTab}
+        dockerStatus={dockerStatus}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+      />
 
       <main className="flex-1 overflow-auto p-4">
-        {activeTab === 'images'     && <ImagesTab />}
-        {activeTab === 'containers' && <ContainersTab />}
-        {activeTab === 'volumes'    && <VolumesTab />}
-        {activeTab === 'networks'   && <NetworksTab />}
-        {activeTab === 'execs'      && <ExecsTab />}
-        {activeTab === 'terminal'   && <TerminalTab />}
+        {effectiveTab === 'images'     && <ImagesTab />}
+        {effectiveTab === 'containers' && <ContainersTab />}
+        {effectiveTab === 'volumes'    && <VolumesTab />}
+        {effectiveTab === 'networks'   && <NetworksTab />}
+        {effectiveTab === 'execs'      && <ExecsTab />}
+        {effectiveTab === 'terminal'   && <TerminalTab />}
       </main>
 
       <LogsPanel />
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
   )
 }

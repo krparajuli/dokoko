@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useEffect, useCallback, useRef, useState } from 'react'
 import { listWebCatalog, provisionWeb, getWebSession, terminateWeb, scanPorts, getPortMappings, removePortMappings, getContainerEnv, setContainerEnv } from '../api.ts'
+import { useAuth } from '../context/AuthContext.tsx'
 import type { CatalogEntry, MappedPort, WebSession, PortScanResult } from '../types.ts'
 
 // ── Port label helpers ────────────────────────────────────────────────────────
@@ -37,23 +38,11 @@ function friendlyPortLabel(p: MappedPort): string {
   return p.process.charAt(0).toUpperCase() + p.process.slice(1)
 }
 
-// ── User-ID helpers ───────────────────────────────────────────────────────────
-
-const USER_ID_KEY = 'dokoko_terminal_user_id'
-
-function getOrCreateUserID(): string {
-  let id = localStorage.getItem(USER_ID_KEY)
-  if (!id) {
-    id = 'user-' + Math.random().toString(36).slice(2, 10)
-    localStorage.setItem(USER_ID_KEY, id)
-  }
-  return id
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function TerminalTab() {
-  const userID = useRef(getOrCreateUserID()).current
+  const { user } = useAuth()
+  const userID = user!.username
 
   const [catalog, setCatalog]     = useState<CatalogEntry[]>([])
   const [session, setSession]     = useState<WebSession | null>(null)

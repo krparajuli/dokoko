@@ -1,5 +1,8 @@
 // Docker resource types mirroring the Go backend responses.
 
+export type AuthUser = { username: string; role: 'admin' | 'user' }
+
+
 export interface ImageRecord {
   DockerID: string
   ShortID: string

@@ -5,27 +5,40 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"time"
 
+	authpkg "dokoko.ai/dokoko/internal/auth"
 	dockermanager "dokoko.ai/dokoko/internal/docker/manager"
 	"dokoko.ai/dokoko/pkg/logger"
 )
 
 // Server holds the HTTP server and all handler dependencies.
 type Server struct {
-	mgr     Manager
-	log     *logger.Logger
-	logBus  *logBus
-	httpSrv *http.Server
+	mgr       Manager
+	log       *logger.Logger
+	logBus    *logBus
+	httpSrv   *http.Server
+	authStore *authpkg.Store
 }
 
 // New creates a configured Server.
 // uiDir is the path to the built frontend files; empty string auto-detects.
-func New(mgr *dockermanager.Manager, log *logger.Logger, addr, uiDir string) *Server {
+// authUsers is the list of users for authentication.
+func New(mgr *dockermanager.Manager, log *logger.Logger, addr, uiDir string, authUsers []authpkg.User) *Server {
 	bus := newLogBus()
+	store := authpkg.NewStore(authUsers)
+	go func() {
+		t := time.NewTicker(10 * time.Minute)
+		defer t.Stop()
+		for range t.C {
+			store.PruneExpired()
+		}
+	}()
 	s := &Server{
-		mgr:    newManagerAdapter(mgr),
-		log:    log,
-		logBus: bus,
+		mgr:       newManagerAdapter(mgr),
+		log:       log,
+		logBus:    bus,
+		authStore: store,
 	}
 	s.httpSrv = &http.Server{
 		Addr:    addr,

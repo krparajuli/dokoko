@@ -13,14 +13,17 @@ import (
 	"time"
 
 	"dokoko.ai/dokoko/cmd/web/server"
+	authpkg "dokoko.ai/dokoko/internal/auth"
 	dockermanager "dokoko.ai/dokoko/internal/docker/manager"
 	"dokoko.ai/dokoko/pkg/logger"
 )
 
 func main() {
-	addr := flag.String("addr", ":8888", "HTTP server address")
-	logLvl := flag.String("log", "info", "log level: error,warn,info,debug,trace")
-	uiDir := flag.String("ui-dir", "", "path to built UI files (ui/dist); auto-detected if empty")
+	addr      := flag.String("addr", ":8888", "HTTP server address")
+	logLvl    := flag.String("log", "info", "log level: error,warn,info,debug,trace")
+	uiDir     := flag.String("ui-dir", "", "path to built UI files (ui/dist); auto-detected if empty")
+	adminUser := flag.String("admin-user", "admin", "admin username")
+	adminPass := flag.String("admin-password", "admin", "admin password")
 	flag.Parse()
 
 	log := logger.New(parseLevel(*logLvl))
@@ -35,7 +38,14 @@ func main() {
 	}
 	defer mgr.Close()
 
-	srv := server.New(mgr, log, *addr, *uiDir)
+	if *adminUser == "admin" && *adminPass == "admin" {
+		log.Warn("using default admin credentials — set --admin-user and --admin-password in production")
+	}
+	users := []authpkg.User{
+		{Username: *adminUser, Password: *adminPass, Role: authpkg.RoleAdmin},
+	}
+
+	srv := server.New(mgr, log, *addr, *uiDir, users)
 	log.SetOutput(srv.LogWriter())
 
 	go func() {

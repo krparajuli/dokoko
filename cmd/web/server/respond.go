@@ -6,13 +6,15 @@ import (
 	"net/http"
 	"time"
 
+	authpkg "dokoko.ai/dokoko/internal/auth"
 	"dokoko.ai/dokoko/pkg/logger"
 )
 
 // handler holds shared dependencies for all HTTP handlers.
 type handler struct {
-	mgr Manager
-	log *logger.Logger
+	mgr       Manager
+	log       *logger.Logger
+	authStore *authpkg.Store
 }
 
 // jsonOK writes a 200 JSON response with the given payload.

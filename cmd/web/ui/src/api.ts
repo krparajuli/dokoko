@@ -18,6 +18,12 @@ const get  = <T>(path: string) => request<T>('GET', path)
 const post = <T>(path: string, body?: unknown) => request<T>('POST', path, body)
 const del  = <T>(path: string) => request<T>('DELETE', path)
 
+// ── Auth ─────────────────────────────────────────────────────────────────────
+export const loginApi  = (username: string, password: string) =>
+  post<{ username: string; role: string }>('/auth/login', { username, password })
+export const logoutApi = () => post('/auth/logout')
+export const meApi     = () => get<{ username: string; role: string }>('/auth/me')
+
 // ── Health ───────────────────────────────────────────────────────────────────
 export const health = () => get<{ ok: boolean; docker: boolean; error?: string }>('/health')
 

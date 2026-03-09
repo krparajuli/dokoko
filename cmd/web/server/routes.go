@@ -8,7 +8,12 @@ import (
 
 func (s *Server) routes(uiDir string) http.Handler {
 	mux := http.NewServeMux()
-	h := &handler{mgr: s.mgr, log: s.log}
+	h := &handler{mgr: s.mgr, log: s.log, authStore: s.authStore}
+
+	// Auth routes (no authentication required)
+	mux.HandleFunc("POST /api/auth/login", h.loginHandler)
+	mux.HandleFunc("POST /api/auth/logout", h.logoutHandler)
+	mux.HandleFunc("GET /api/auth/me", h.meHandler)
 
 	// Health / connection
 	mux.HandleFunc("GET /api/health", h.health)
@@ -79,7 +84,7 @@ func (s *Server) routes(uiDir string) http.Handler {
 		mux.Handle("/", http.FileServer(http.Dir(dir)))
 	}
 
-	return cors(mux)
+	return cors(authMiddleware(s.authStore, s.log)(mux))
 }
 
 // resolveUIDir returns the UI dist directory path.
