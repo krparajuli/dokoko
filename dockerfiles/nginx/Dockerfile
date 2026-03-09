@@ -84,6 +84,23 @@ RUN mkdir -p /etc/nginx/ssl && \
     -out /etc/nginx/ssl/nginx.crt \
     -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
 
+# Nerd Font + terminal quality (JetBrains Mono Nerd Font, tmux true-color)
+RUN apk add --no-cache fontconfig unzip woff2 && \
+    mkdir -p /usr/share/fonts/nerd-fonts && \
+    curl -fsSL \
+        "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/JetBrainsMono.zip" \
+        -o /tmp/JetBrainsMono.zip && \
+    unzip -j /tmp/JetBrainsMono.zip \
+        "JetBrainsMonoNerdFontMono-Regular.ttf" \
+        -d /usr/share/fonts/nerd-fonts/ && \
+    woff2_compress \
+        /usr/share/fonts/nerd-fonts/JetBrainsMonoNerdFontMono-Regular.ttf && \
+    rm /usr/share/fonts/nerd-fonts/JetBrainsMonoNerdFontMono-Regular.ttf \
+       /tmp/JetBrainsMono.zip && \
+    fc-cache -f && \
+    printf 'set -g default-terminal "tmux-256color"\nset -ga terminal-overrides ",xterm-256color:Tc"\n' \
+        > /root/.tmux.conf
+
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
@@ -94,6 +111,8 @@ RUN mkdir -p /workspace && chmod 777 /workspace
 # Environment variables
 ENV TTYD_PORT=7681
 ENV TERM=xterm-256color
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
 # Set working directory
 WORKDIR /workspace

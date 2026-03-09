@@ -93,9 +93,34 @@ RUN chmod +x /entrypoint.sh
 # Create workspace directory and set ownership
 RUN mkdir -p /workspace && chown claude:claude /workspace && chmod 755 /workspace
 
+# Nerd Font + terminal quality (locale, JetBrains Mono Nerd Font, tmux true-color)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        locales fontconfig unzip woff2 && \
+    rm -rf /var/lib/apt/lists/* && \
+    locale-gen en_US.UTF-8 && \
+    mkdir -p /usr/share/fonts/nerd-fonts /etc/ttyd && \
+    curl -fsSL \
+        "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/JetBrainsMono.zip" \
+        -o /tmp/JetBrainsMono.zip && \
+    unzip -j /tmp/JetBrainsMono.zip \
+        "JetBrainsMonoNerdFontMono-Regular.ttf" \
+        -d /usr/share/fonts/nerd-fonts/ && \
+    woff2_compress \
+        /usr/share/fonts/nerd-fonts/JetBrainsMonoNerdFontMono-Regular.ttf && \
+    rm /usr/share/fonts/nerd-fonts/JetBrainsMonoNerdFontMono-Regular.ttf \
+       /tmp/JetBrainsMono.zip && \
+    fc-cache -f && \
+    printf 'set -g default-terminal "tmux-256color"\nset -ga terminal-overrides ",xterm-256color:Tc"\n' \
+        > /home/claude/.tmux.conf && \
+    chown claude:claude /home/claude/.tmux.conf && \
+    chown claude:claude /etc/ttyd
+
 # Set environment variables
 ENV TTYD_PORT=7681
 ENV TERM=xterm-256color
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
 # Expose ttyd port
 EXPOSE 7681
