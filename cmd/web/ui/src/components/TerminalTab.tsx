@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { listWebCatalog, provisionWeb, getWebSession, terminateWeb, scanPorts, getPortMappings, removePortMappings } from '../api.ts'
+import { listWebCatalog, provisionWeb, getWebSession, terminateWeb, scanPorts, getPortMappings, removePortMappings, getContainerEnv, setContainerEnv } from '../api.ts'
 import type { CatalogEntry, MappedPort, WebSession, PortScanResult } from '../types.ts'
 
 // ── Port label helpers ────────────────────────────────────────────────────────
@@ -66,6 +66,15 @@ export default function TerminalTab() {
   const pollRef                           = useRef<number | null>(null)
   const ttydPollRef                       = useRef<number | null>(null)
   const portScanIntervalRef               = useRef<number | null>(null)
+
+  // ── Env var state ────────────────────────────────────────────────────────────
+  const [envVars, setEnvVars]           = useState<Record<string, string>>({})
+  const [loadingEnv, setLoadingEnv]     = useState(false)
+  const [savingEnv, setSavingEnv]       = useState(false)
+  const [editingKey, setEditingKey]     = useState<string | null>(null) // key being edited; null=none
+  const [draftKey, setDraftKey]         = useState('')
+  const [draftValue, setDraftValue]     = useState('')
+  const [addRows, setAddRows]           = useState<{key: string; value: string}[]>([])
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -197,6 +206,18 @@ export default function TerminalTab() {
     return () => { cancelled = true; stopPoll(); stopTtydPoll(); stopPortScanInterval() }
   }, [userID, startPoll])
 
+  // ── Load env vars on mount ───────────────────────────────────────────────────
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadingEnv(true)
+    getContainerEnv(userID)
+      .then(vars => { if (!cancelled) setEnvVars(vars ?? {}) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingEnv(false) })
+    return () => { cancelled = true }
+  }, [userID])
+
   // ── Actions ──────────────────────────────────────────────────────────────────
 
   const handleProvision = async (catalogID: string) => {
@@ -254,6 +275,67 @@ export default function TerminalTab() {
     } finally {
       setScanning(false)
     }
+  }
+
+  // ── Env var handlers ─────────────────────────────────────────────────────────
+
+  const handleSaveEnvVar = async () => {
+    if (!draftKey.trim()) return
+    setSavingEnv(true)
+    try {
+      const updated = { ...envVars }
+      if (editingKey !== draftKey) delete updated[editingKey!]
+      updated[draftKey] = draftValue
+      const result = await setContainerEnv(userID, updated) as Record<string, string>
+      setEnvVars(result ?? updated)
+      setEditingKey(null); setDraftKey(''); setDraftValue('')
+      notify('Variable saved')
+    } catch (e: unknown) {
+      notify('Save failed: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setSavingEnv(false)
+    }
+  }
+
+  const handleSaveAddRows = async () => {
+    const valid = addRows.filter(r => r.key.trim())
+    if (valid.length === 0) return
+    setSavingEnv(true)
+    try {
+      const updated = { ...envVars }
+      for (const r of valid) updated[r.key] = r.value
+      const result = await setContainerEnv(userID, updated) as Record<string, string>
+      setEnvVars(result ?? updated)
+      setAddRows([])
+      notify(`${valid.length} variable${valid.length > 1 ? 's' : ''} saved`)
+    } catch (e: unknown) {
+      notify('Save failed: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setSavingEnv(false)
+    }
+  }
+
+  const handleDeleteEnvVar = async (key: string) => {
+    setSavingEnv(true)
+    try {
+      const updated = { ...envVars }
+      delete updated[key]
+      const result = await setContainerEnv(userID, updated) as Record<string, string>
+      setEnvVars(result ?? updated)
+      notify('Variable removed')
+    } catch (e: unknown) {
+      notify('Remove failed: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setSavingEnv(false)
+    }
+  }
+
+  const handleEditEnvVar = (key: string) => {
+    setEditingKey(key); setDraftKey(key); setDraftValue(envVars[key])
+  }
+
+  const handleCancelEdit = () => {
+    setEditingKey(null); setDraftKey(''); setDraftValue('')
   }
 
   // ── Render ────────────────────────────────────────────────────────────────────
@@ -442,6 +524,115 @@ export default function TerminalTab() {
           )}
         </div>
       )}
+
+      {/* Environment Variables — always visible */}
+      {!loading && (
+        <div className="border border-zinc-200 dark:border-zinc-700 rounded space-y-2 p-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+              Environment Variables
+            </h3>
+            {session && session.status === 'ready'
+              ? <span className="text-[10px] text-green-600 dark:text-green-400">live in container</span>
+              : <span className="text-[10px] text-zinc-400">applied on next start</span>
+            }
+          </div>
+
+          {loadingEnv ? (
+            <p className="text-xs text-zinc-400">Loading…</p>
+          ) : (
+            <div className="space-y-1">
+              {Object.entries(envVars).map(([key, value]) =>
+                editingKey === key ? (
+                  <EnvVarForm
+                    key={key}
+                    draftKey={draftKey}
+                    draftValue={draftValue}
+                    saving={savingEnv}
+                    onKeyChange={setDraftKey}
+                    onValueChange={setDraftValue}
+                    onSave={handleSaveEnvVar}
+                    onCancel={handleCancelEdit}
+                  />
+                ) : (
+                  <div key={key} className="flex items-center gap-2 text-xs group py-0.5">
+                    <code className="w-36 shrink-0 font-mono text-amber-600 dark:text-amber-400 truncate">{key}</code>
+                    <code className="flex-1 font-mono text-zinc-500 dark:text-zinc-400 truncate">{value || '""'}</code>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <button
+                        onClick={() => handleEditEnvVar(key)}
+                        className="px-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+                        title="Edit"
+                      >✎</button>
+                      <button
+                        onClick={() => handleDeleteEnvVar(key)}
+                        disabled={savingEnv}
+                        className="px-1 text-zinc-400 hover:text-red-500 disabled:opacity-50"
+                        title="Remove"
+                      >✕</button>
+                    </div>
+                  </div>
+                )
+              )}
+
+              {addRows.length > 0 ? (
+                <div className="space-y-1 pt-1 border-t border-zinc-100 dark:border-zinc-800 mt-1">
+                  {addRows.map((row, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <input
+                        value={row.key}
+                        onChange={e => setAddRows(rs => rs.map((r, j) => j === i ? { ...r, key: e.target.value } : r))}
+                        placeholder="KEY"
+                        // eslint-disable-next-line jsx-a11y/no-autofocus
+                        autoFocus={i === 0 && addRows.length === 1}
+                        className="w-36 shrink-0 text-xs font-mono px-1.5 py-0.5 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-amber-600 dark:text-amber-400 focus:outline-none focus:border-zinc-500"
+                      />
+                      <input
+                        value={row.value}
+                        onChange={e => setAddRows(rs => rs.map((r, j) => j === i ? { ...r, value: e.target.value } : r))}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSaveAddRows() }}
+                        placeholder="value"
+                        className="flex-1 text-xs font-mono px-1.5 py-0.5 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 focus:outline-none focus:border-zinc-500"
+                      />
+                      <button
+                        onClick={() => setAddRows(rs => rs.filter((_, j) => j !== i))}
+                        disabled={savingEnv}
+                        className="shrink-0 px-1 text-zinc-400 hover:text-red-500 disabled:opacity-50"
+                        title="Remove row"
+                      >✕</button>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <button
+                      onClick={() => setAddRows(rs => [...rs, { key: '', value: '' }])}
+                      disabled={savingEnv}
+                      className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 disabled:opacity-50"
+                    >+ Row</button>
+                    <button
+                      onClick={handleSaveAddRows}
+                      disabled={savingEnv || !addRows.some(r => r.key.trim())}
+                      className="text-xs px-2 py-0.5 rounded bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 disabled:opacity-50"
+                    >{savingEnv ? 'Saving…' : 'Save All'}</button>
+                    <button
+                      onClick={() => setAddRows([])}
+                      disabled={savingEnv}
+                      className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 disabled:opacity-50"
+                    >Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setAddRows([{ key: '', value: '' }])}
+                  disabled={savingEnv}
+                  className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 disabled:opacity-50 mt-1"
+                >
+                  + Add Variable
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -454,5 +645,50 @@ function Spinner() {
       className="inline-block w-4 h-4 border-2 border-zinc-300 dark:border-zinc-600 border-t-green-500 dark:border-t-green-400 rounded-full animate-spin"
       aria-hidden="true"
     />
+  )
+}
+
+// ── EnvVarForm ────────────────────────────────────────────────────────────────
+
+function EnvVarForm({ draftKey, draftValue, saving, onKeyChange, onValueChange, onSave, onCancel }: {
+  draftKey: string
+  draftValue: string
+  saving: boolean
+  onKeyChange: (v: string) => void
+  onValueChange: (v: string) => void
+  onSave: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="flex items-center gap-1.5 py-0.5">
+      <input
+        value={draftKey}
+        onChange={e => onKeyChange(e.target.value)}
+        placeholder="KEY"
+        className="w-36 shrink-0 text-xs font-mono px-1.5 py-0.5 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-amber-600 dark:text-amber-400 focus:outline-none focus:border-zinc-500"
+        autoFocus
+      />
+      <input
+        value={draftValue}
+        onChange={e => onValueChange(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') onSave() }}
+        placeholder="value"
+        className="flex-1 text-xs font-mono px-1.5 py-0.5 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 focus:outline-none focus:border-zinc-500"
+      />
+      <button
+        onClick={onSave}
+        disabled={saving || !draftKey.trim()}
+        className="shrink-0 text-xs px-2 py-0.5 rounded bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 disabled:opacity-50"
+      >
+        Save
+      </button>
+      <button
+        onClick={onCancel}
+        disabled={saving}
+        className="shrink-0 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 disabled:opacity-50"
+      >
+        Cancel
+      </button>
+    </div>
   )
 }

@@ -102,6 +102,8 @@ type webContainersClerk interface {
 	Terminate(ctx context.Context, userID string) (*webcontainersactor.Ticket, error)
 	GetSession(userID string) *webcontainersstate.UserSession
 	Catalog() []*webcontainerscatalog.ImageDef
+	GetEnvVars(userID string) map[string]string
+	SetEnvVars(ctx context.Context, userID string, vars map[string]string) error
 }
 
 // proxyPortMapClerk is the subset of *proxyportmapclerk.Clerk used by port-map handlers.

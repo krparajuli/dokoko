@@ -3,10 +3,14 @@
 package webcontainerops
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"dokoko.ai/dokoko/internal/docker"
 	webcontainerscatalog "dokoko.ai/dokoko/internal/webcontainers/catalog"
@@ -14,6 +18,7 @@ import (
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockernat "github.com/docker/go-connections/nat"
+	dockerstdcopy "github.com/docker/docker/pkg/stdcopy"
 )
 
 const (
@@ -69,7 +74,10 @@ type ProvisionResult struct {
 // If it exists but is stopped, it is removed and recreated.  Otherwise a
 // fresh container is created from def.Image with the catalogue's startup
 // script and a random host-port binding on 7681/tcp.
-func (o *Ops) ProvisionContainer(ctx context.Context, userID string, def *webcontainerscatalog.ImageDef) (*ProvisionResult, error) {
+//
+// extraEnv is merged into the container's environment (in addition to
+// TTYD_BASE_PATH).  Keys in extraEnv override any earlier values.
+func (o *Ops) ProvisionContainer(ctx context.Context, userID string, def *webcontainerscatalog.ImageDef, extraEnv map[string]string) (*ProvisionResult, error) {
 	name := SafeContainerName(userID)
 	o.log.Debug("webcontainer ops: provision name=%s image=%s", name, def.Image)
 
@@ -110,11 +118,16 @@ func (o *Ops) ProvisionContainer(ctx context.Context, userID string, def *webcon
 	}
 
 	// Create the container.
+	env := make([]string, 0, 1+len(extraEnv))
+	env = append(env, "TTYD_BASE_PATH="+basePath)
+	for k, v := range extraEnv {
+		env = append(env, k+"="+v)
+	}
 	containerCfg := &dockercontainer.Config{
 		Image:        def.Image,
 		Cmd:          []string{"sh", "-c", def.StartScript},
 		ExposedPorts: dockernat.PortSet{TtydPort: {}},
-		Env:          []string{"TTYD_BASE_PATH=" + basePath},
+		Env:          env,
 		Labels: map[string]string{
 			ManagedLabel:  ManagedLabelValue,
 			"dokoko.user": userID,
@@ -176,6 +189,55 @@ func (o *Ops) TerminateContainer(ctx context.Context, containerName string) erro
 
 	o.log.Info("webcontainer ops: container %s terminated", containerName)
 	return nil
+}
+
+// ApplyEnvVars writes envVars into /etc/profile.d/dokoko-env.sh inside the
+// running container so that new shell sessions pick them up automatically.
+// The file is managed by dokoko — its contents are fully replaced on each call.
+// Passing a nil or empty map writes an empty profile file (clears all vars).
+//
+// The write is done via docker exec using base64-encoded content to avoid
+// shell-quoting issues with arbitrary variable values.
+func (o *Ops) ApplyEnvVars(ctx context.Context, containerName string, envVars map[string]string) error {
+	var sb strings.Builder
+	sb.WriteString("#!/bin/sh\n# Managed by dokoko — do not edit manually.\n")
+	for k, v := range envVars {
+		fmt.Fprintf(&sb, "export %s=%s\n", k, shellQuote(v))
+	}
+	encoded := base64.StdEncoding.EncodeToString([]byte(sb.String()))
+	script := "echo '" + encoded + "' | base64 -d > /etc/profile.d/dokoko-env.sh"
+	if _, err := o.execRead(ctx, containerName, []string{"sh", "-c", script}); err != nil {
+		return fmt.Errorf("apply env vars in %s: %w", containerName, err)
+	}
+	o.log.Debug("webcontainer ops: applied %d env var(s) to %s", len(envVars), containerName)
+	return nil
+}
+
+// shellQuote wraps s in single quotes, escaping any embedded single quotes.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// execRead runs cmd inside containerName and returns the combined stdout bytes.
+func (o *Ops) execRead(ctx context.Context, containerName string, cmd []string) ([]byte, error) {
+	execResp, err := o.conn.Client().ContainerExecCreate(ctx, containerName, dockertypes.ExecConfig{
+		Cmd:          cmd,
+		AttachStdout: true,
+		AttachStderr: false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("exec create in %s: %w", containerName, err)
+	}
+	attached, err := o.conn.Client().ContainerExecAttach(ctx, execResp.ID, dockertypes.ExecStartCheck{})
+	if err != nil {
+		return nil, fmt.Errorf("exec attach in %s: %w", containerName, err)
+	}
+	defer attached.Close()
+	var stdout bytes.Buffer
+	if _, err := dockerstdcopy.StdCopy(&stdout, io.Discard, attached.Reader); err != nil {
+		return nil, fmt.Errorf("exec read from %s: %w", containerName, err)
+	}
+	return stdout.Bytes(), nil
 }
 
 // hostPortFromInspect extracts the host-side port mapped to TtydPort from an

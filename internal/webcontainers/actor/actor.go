@@ -56,7 +56,7 @@ func (c *Config) withDefaults() Config {
 // ── opsProvider ───────────────────────────────────────────────────────────────
 
 type opsProvider interface {
-	ProvisionContainer(ctx context.Context, userID string, def *webcontainerscatalog.ImageDef) (*webcontainersops.ProvisionResult, error)
+	ProvisionContainer(ctx context.Context, userID string, def *webcontainerscatalog.ImageDef, extraEnv map[string]string) (*webcontainersops.ProvisionResult, error)
 	TerminateContainer(ctx context.Context, containerName string) error
 }
 
@@ -127,8 +127,9 @@ func New(ops opsProvider, st *webcontainersstate.State, store *webcontainersstat
 // ── Mutating operations ───────────────────────────────────────────────────────
 
 // Provision asynchronously provisions a container for userID using def.
+// envVars are injected into the container's environment at creation time.
 // The store is updated on success with a UserSession in StatusReady.
-func (a *Actor) Provision(ctx context.Context, userID string, def *webcontainerscatalog.ImageDef) (*Ticket, error) {
+func (a *Actor) Provision(ctx context.Context, userID string, def *webcontainerscatalog.ImageDef, envVars map[string]string) (*Ticket, error) {
 	a.log.LowTrace("webcontainer actor: submitting provision for user=%s image=%s", userID, def.Image)
 
 	meta := map[string]string{"catalog_id": def.ID, "image": def.Image}
@@ -143,7 +144,7 @@ func (a *Actor) Provision(ctx context.Context, userID string, def *webcontainers
 
 	fn := func(ctx context.Context) (string, error) {
 		a.log.Debug("webcontainer actor: provisioning user=%s", userID)
-		res, err := a.ops.ProvisionContainer(ctx, userID, def)
+		res, err := a.ops.ProvisionContainer(ctx, userID, def, envVars)
 		if err != nil {
 			a.store.SetSession(&webcontainersstate.UserSession{
 				UserID:    userID,

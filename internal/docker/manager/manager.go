@@ -69,6 +69,7 @@ import (
 	proxyportmapstate "dokoko.ai/dokoko/internal/proxyportmap/state"
 	webcontainersactor "dokoko.ai/dokoko/internal/webcontainers/actor"
 	webcontainersclerk "dokoko.ai/dokoko/internal/webcontainers/clerk"
+	webcontainersenvstore "dokoko.ai/dokoko/internal/webcontainers/envstore"
 	webcontainersops "dokoko.ai/dokoko/internal/webcontainers/ops"
 	webcontainersstate "dokoko.ai/dokoko/internal/webcontainers/state"
 	"dokoko.ai/dokoko/pkg/logger"
@@ -122,11 +123,12 @@ type Manager struct {
 	portproxyActor *portproxyactor.Actor
 	portProxy      *portproxyclerk.Clerk
 
-	// Web-containers subsystem: state+store survive reconnects; actor+clerk recreated.
-	webContainersState *webcontainersstate.State
-	webContainersStore *webcontainersstate.Store
-	webContainersActor *webcontainersactor.Actor
-	webContainers      *webcontainersclerk.Clerk
+	// Web-containers subsystem: state+store+envStore survive reconnects; actor+clerk recreated.
+	webContainersState   *webcontainersstate.State
+	webContainersStore   *webcontainersstate.Store
+	webContainersEnvStore *webcontainersenvstore.Store
+	webContainersActor   *webcontainersactor.Actor
+	webContainers        *webcontainersclerk.Clerk
 
 	// ProxyPortMap subsystem: store survives reconnects; actor+clerk recreated.
 	proxyPortMapState *proxyportmapstate.State
@@ -160,8 +162,9 @@ func New(ctx context.Context, log *logger.Logger, opts ...dockerclient.Opt) (*Ma
 		portproxyState: portproxystate.New(log),
 		portproxyStore: portproxystate.NewStore(log),
 
-		webContainersState: webcontainersstate.New(log),
-		webContainersStore: webcontainersstate.NewStore(log),
+		webContainersState:    webcontainersstate.New(log),
+		webContainersStore:    webcontainersstate.NewStore(log),
+		webContainersEnvStore: webcontainersenvstore.New(),
 
 		proxyPortMapState: proxyportmapstate.New(log),
 		proxyPortMapStore: proxyportmapstate.NewStore(log),
@@ -427,7 +430,7 @@ func (m *Manager) connect(ctx context.Context) error {
 	// Set up web-containers subsystem.
 	wcOps := webcontainersops.New(conn, m.log)
 	m.webContainersActor = webcontainersactor.New(wcOps, m.webContainersState, m.webContainersStore, m.log, nil)
-	m.webContainers = webcontainersclerk.New(m.webContainersActor, m.webContainersState, m.webContainersStore, m.log)
+	m.webContainers = webcontainersclerk.New(m.webContainersActor, wcOps, m.webContainersState, m.webContainersStore, m.webContainersEnvStore, m.log)
 
 	// Set up proxyportmap subsystem.
 	ppmOps := proxyportmapops.New(conn, m.log)

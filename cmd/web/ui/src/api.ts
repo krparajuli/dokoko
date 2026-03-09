@@ -70,6 +70,12 @@ export const getWebSession    = (user_id: string) =>
 export const terminateWeb     = (user_id: string) =>
   del(`/webcontainers/session/${encodeURIComponent(user_id)}`)
 
+// ── Web Container Env Vars ────────────────────────────────────────────────────
+export const getContainerEnv = (user_id: string) =>
+  get<Record<string, string>>(`/webcontainers/env/${encodeURIComponent(user_id)}`)
+export const setContainerEnv = (user_id: string, vars: Record<string, string>) =>
+  post<Record<string, string>>(`/webcontainers/env/${encodeURIComponent(user_id)}`, vars)
+
 // ── ProxyPortMap ──────────────────────────────────────────────────────────────
 export const scanPorts        = (user_id: string) =>
   post('/proxyportmap/scan', { user_id })

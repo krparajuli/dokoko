@@ -129,6 +129,54 @@ func (h *handler) terminateWebSession(w http.ResponseWriter, r *http.Request) {
 	jsonAccepted(w, "session terminated for user: "+userID)
 }
 
+// ── Environment variables ─────────────────────────────────────────────────────
+
+// getContainerEnv returns the stored env vars for the given user.
+//
+// GET /api/webcontainers/env/{user_id}
+func (h *handler) getContainerEnv(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("user_id")
+	wc := h.mgr.WebContainers()
+	if wc == nil {
+		jsonErr(w, http.StatusServiceUnavailable, "webcontainers not available")
+		return
+	}
+	vars := wc.GetEnvVars(userID)
+	if vars == nil {
+		vars = map[string]string{}
+	}
+	jsonOK(w, vars)
+}
+
+// setContainerEnv replaces all env vars for the user and applies them live
+// to the running container (if one is ready).
+//
+// PUT /api/webcontainers/env/{user_id}
+// Body: {"KEY":"VALUE", ...}
+func (h *handler) setContainerEnv(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("user_id")
+	wc := h.mgr.WebContainers()
+	if wc == nil {
+		jsonErr(w, http.StatusServiceUnavailable, "webcontainers not available")
+		return
+	}
+
+	var vars map[string]string
+	if err := decode(r, &vars); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	ctx, cancel := opCtx(r)
+	defer cancel()
+
+	if err := wc.SetEnvVars(ctx, userID, vars); err != nil {
+		jsonErr(w, http.StatusInternalServerError, "apply env vars: "+err.Error())
+		return
+	}
+	jsonOK(w, vars)
+}
+
 // ── Terminal proxy ────────────────────────────────────────────────────────────
 
 // proxyWebTerminal reverse-proxies all ttyd traffic (HTTP assets + WebSocket)

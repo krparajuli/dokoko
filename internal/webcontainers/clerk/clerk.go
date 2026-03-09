@@ -1,6 +1,6 @@
 // Package webcontainersclerk is the public API facade for the web-container
-// subsystem.  It wires the actor, state machine, and session store together
-// and exposes a simple interface to callers (the HTTP handlers).
+// subsystem.  It wires the actor, state machine, session store, and env store
+// together and exposes a simple interface to callers (the HTTP handlers).
 package webcontainersclerk
 
 import (
@@ -9,41 +9,59 @@ import (
 
 	webcontainersactor "dokoko.ai/dokoko/internal/webcontainers/actor"
 	webcontainerscatalog "dokoko.ai/dokoko/internal/webcontainers/catalog"
+	webcontainersenvstore "dokoko.ai/dokoko/internal/webcontainers/envstore"
 	webcontainersstate "dokoko.ai/dokoko/internal/webcontainers/state"
 	"dokoko.ai/dokoko/pkg/logger"
 )
 
 // actorIface is the subset of *webcontainersactor.Actor used by Clerk.
 type actorIface interface {
-	Provision(ctx context.Context, userID string, def *webcontainerscatalog.ImageDef) (*webcontainersactor.Ticket, error)
+	Provision(ctx context.Context, userID string, def *webcontainerscatalog.ImageDef, envVars map[string]string) (*webcontainersactor.Ticket, error)
 	Terminate(ctx context.Context, userID, containerName string) (*webcontainersactor.Ticket, error)
 	Close()
+}
+
+// envApplier is satisfied by *webcontainersops.Ops.  It allows the clerk to
+// push updated env vars into an already-running container without going
+// through the async actor.
+type envApplier interface {
+	ApplyEnvVars(ctx context.Context, containerName string, envVars map[string]string) error
 }
 
 // Clerk is the public entry-point for the web-container subsystem.
 // All methods are safe for concurrent use.
 type Clerk struct {
-	actor actorIface
-	state *webcontainersstate.State
-	store *webcontainersstate.Store
-	log   *logger.Logger
+	actor    actorIface
+	ops      envApplier
+	state    *webcontainersstate.State
+	store    *webcontainersstate.Store
+	envStore *webcontainersenvstore.Store
+	log      *logger.Logger
 }
 
 // New wires the clerk together.
-func New(actor actorIface, state *webcontainersstate.State, store *webcontainersstate.Store, log *logger.Logger) *Clerk {
+func New(
+	actor actorIface,
+	ops envApplier,
+	state *webcontainersstate.State,
+	store *webcontainersstate.Store,
+	envStore *webcontainersenvstore.Store,
+	log *logger.Logger,
+) *Clerk {
 	log.LowTrace("initialising webcontainer clerk")
-	return &Clerk{actor: actor, state: state, store: store, log: log}
+	return &Clerk{actor: actor, ops: ops, state: state, store: store, envStore: envStore, log: log}
 }
 
 // Provision submits an async provision request for the given user and catalog
-// image ID.  Returns a Ticket immediately; callers may poll GetSession to
-// check when status transitions from "provisioning" to "ready" or "error".
+// image ID.  Stored env vars for the user are injected into the container.
+// Returns a Ticket immediately; callers may poll GetSession to check when
+// status transitions from "provisioning" to "ready" or "error".
 func (c *Clerk) Provision(ctx context.Context, userID, catalogID string) (*webcontainersactor.Ticket, error) {
 	def := webcontainerscatalog.Find(catalogID)
 	if def == nil {
 		return nil, &ErrUnknownCatalogID{ID: catalogID}
 	}
-	return c.actor.Provision(ctx, userID, def)
+	return c.actor.Provision(ctx, userID, def, c.envStore.Get(userID))
 }
 
 // Terminate submits an async termination for the given user's container.
@@ -66,7 +84,33 @@ func (c *Clerk) Catalog() []*webcontainerscatalog.ImageDef {
 	return webcontainerscatalog.Catalog
 }
 
-// Store returns the underlying session store (for the HTTP handler interface).
+// ── Environment variables ─────────────────────────────────────────────────────
+
+// GetEnvVars returns a copy of the stored env vars for userID.
+// Returns nil when the user has no stored vars.
+func (c *Clerk) GetEnvVars(userID string) map[string]string {
+	return c.envStore.Get(userID)
+}
+
+// SetEnvVars atomically replaces all env vars for userID with vars, then
+// applies them live to the running container (if one is ready).
+// Passing a nil or empty map clears all stored vars.
+func (c *Clerk) SetEnvVars(ctx context.Context, userID string, vars map[string]string) error {
+	c.envStore.Replace(userID, vars)
+	sess := c.store.GetSession(userID)
+	if sess == nil || sess.Status != webcontainersstate.StatusReady || sess.ContainerName == "" {
+		return nil // no running container — vars will be applied at next provision
+	}
+	if err := c.ops.ApplyEnvVars(ctx, sess.ContainerName, vars); err != nil {
+		c.log.Warn("webcontainer clerk: ApplyEnvVars failed for %s: %v", userID, err)
+		return err
+	}
+	return nil
+}
+
+// ── Internal accessors ────────────────────────────────────────────────────────
+
+// Store returns the underlying session store.
 func (c *Clerk) Store() *webcontainersstate.Store {
 	return c.store
 }
