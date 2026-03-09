@@ -9,3 +9,5 @@ dockerbuild
 database/dokokostore.db
 
 
+
+bin/
