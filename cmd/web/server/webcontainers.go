@@ -234,7 +234,7 @@ func (h *handler) getContainerEnv(w http.ResponseWriter, r *http.Request) {
 // setContainerEnv replaces all env vars for the user and applies them live
 // to the running container (if one is ready).
 //
-// PUT /api/webcontainers/env/{user_id}
+// POST /api/webcontainers/env/{user_id}
 // Body: {"KEY":"VALUE", ...}
 func (h *handler) setContainerEnv(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("user_id")
