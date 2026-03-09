@@ -25,7 +25,9 @@ func main() {
 	uiDir     := flag.String("ui-dir", "", "path to built UI files (ui/dist); auto-detected if empty")
 	adminUser     := flag.String("admin-user", "admin", "admin username")
 	adminPass     := flag.String("admin-password", "admin", "admin password")
-	allowedImages := flag.String("allowed-images", "", "comma-separated catalog IDs available to non-admin users (empty = all)")
+	userName      := flag.String("user-name", "user", "default non-admin username")
+	userPass      := flag.String("user-password", "password", "default non-admin password")
+	allowedImages := flag.String("allowed-images", "claudewebd,gemini,codex,opencode", "comma-separated catalog IDs available to non-admin users (empty = all)")
 	flag.Parse()
 
 	log := logger.New(parseLevel(*logLvl))
@@ -43,8 +45,12 @@ func main() {
 	if *adminUser == "admin" && *adminPass == "admin" {
 		log.Warn("using default admin credentials — set --admin-user and --admin-password in production")
 	}
+	if *userPass == "password" {
+		log.Warn("using default user credentials — set --user-name and --user-password in production")
+	}
 	users := []authpkg.User{
 		{Username: *adminUser, Password: *adminPass, Role: authpkg.RoleAdmin},
+		{Username: *userName, Password: *userPass, Role: authpkg.RoleUser},
 	}
 
 	var allowed []string
