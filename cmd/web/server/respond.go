@@ -7,6 +7,7 @@ import (
 	"time"
 
 	authpkg "dokoko.ai/dokoko/internal/auth"
+	imagecfg "dokoko.ai/dokoko/internal/imageconfig"
 	"dokoko.ai/dokoko/pkg/logger"
 )
 
@@ -15,7 +16,8 @@ type handler struct {
 	mgr           Manager
 	log           *logger.Logger
 	authStore     *authpkg.Store
-	allowedImages []string // catalog IDs non-admin users may provision; nil = all
+	allowedImages []string         // catalog IDs non-admin users may provision; nil = all
+	imageConfig   *imagecfg.Config // per-image env-var schemas
 }
 
 // jsonOK writes a 200 JSON response with the given payload.

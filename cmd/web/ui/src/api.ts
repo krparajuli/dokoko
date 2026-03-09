@@ -69,6 +69,8 @@ export const getState = () => get('/state')
 
 // ── Web Containers ────────────────────────────────────────────────────────────
 export const listWebCatalog   = () => get('/webcontainers/catalog')
+export const getImageVars     = (catalog_id: string) =>
+  get<{ vars: import('./types.ts').VarDef[] }>(`/webcontainers/imagevars/${encodeURIComponent(catalog_id)}`)
 export const provisionWeb     = (user_id: string, catalog_id: string) =>
   post('/webcontainers/provision', { user_id, catalog_id })
 export const getWebSession    = (user_id: string) =>

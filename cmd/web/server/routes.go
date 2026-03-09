@@ -8,7 +8,7 @@ import (
 
 func (s *Server) routes(uiDir string) http.Handler {
 	mux := http.NewServeMux()
-	h := &handler{mgr: s.mgr, log: s.log, authStore: s.authStore, allowedImages: s.allowedImages}
+	h := &handler{mgr: s.mgr, log: s.log, authStore: s.authStore, allowedImages: s.allowedImages, imageConfig: s.imageConfig}
 
 	// Auth routes (no authentication required)
 	mux.HandleFunc("POST /api/auth/login", h.loginHandler)
@@ -63,6 +63,7 @@ func (s *Server) routes(uiDir string) http.Handler {
 
 	// Web Containers (user terminal sessions)
 	mux.HandleFunc("GET /api/webcontainers/catalog", h.listWebCatalog)
+	mux.HandleFunc("GET /api/webcontainers/imagevars/{catalog_id}", h.getImageVars)
 	mux.HandleFunc("POST /api/webcontainers/provision", h.provisionWebContainer)
 	mux.HandleFunc("GET /api/webcontainers/session/{user_id}", h.getWebSession)
 	mux.HandleFunc("DELETE /api/webcontainers/session/{user_id}", h.terminateWebSession)

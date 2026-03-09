@@ -15,6 +15,7 @@ import (
 
 	"dokoko.ai/dokoko/cmd/web/server"
 	authpkg "dokoko.ai/dokoko/internal/auth"
+	imagecfg "dokoko.ai/dokoko/internal/imageconfig"
 	dockermanager "dokoko.ai/dokoko/internal/docker/manager"
 	"dokoko.ai/dokoko/pkg/logger"
 )
@@ -28,6 +29,7 @@ func main() {
 	userName      := flag.String("user-name", "user", "default non-admin username")
 	userPass      := flag.String("user-password", "password", "default non-admin password")
 	allowedImages := flag.String("allowed-images", "claudewebd,gemini,codex,opencode", "comma-separated catalog IDs available to non-admin users (empty = all)")
+	configFile    := flag.String("config", "dokoko.yaml", "path to YAML config file (image env-var schemas, etc.)")
 	flag.Parse()
 
 	log := logger.New(parseLevel(*logLvl))
@@ -62,7 +64,14 @@ func main() {
 		}
 	}
 
-	srv := server.New(mgr, log, *addr, *uiDir, users, allowed)
+	imgCfg, err := imagecfg.Load(*configFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
+		os.Exit(1)
+	}
+	log.Info("loaded image config from %s (%d image var schema(s))", *configFile, len(imgCfg.ImageVars))
+
+	srv := server.New(mgr, log, *addr, *uiDir, users, allowed, imgCfg)
 	log.SetOutput(srv.LogWriter())
 
 	go func() {

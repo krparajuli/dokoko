@@ -1,0 +1,41 @@
+# dokoko configuration
+#
+# imagevars defines the environment variable schema for each web-container
+# catalog image.  Variables marked required must be set before a container
+# can be provisioned.  Variables with a defaultValue are pre-populated
+# automatically if the user has not supplied their own value.
+
+imagevars:
+  - imagename: claudewebd
+    vars:
+      - name: ANTHROPIC_API_KEY
+        required: true
+        hasDefault: false
+      - name: CLAUDE_MODEL
+        required: false
+        hasDefault: true
+        defaultValue: claude-opus-4-5
+
+  - imagename: gemini
+    vars:
+      - name: GEMINI_API_KEY
+        required: true
+        hasDefault: false
+
+  - imagename: codex
+    vars:
+      - name: OPENAI_API_KEY
+        required: true
+        hasDefault: false
+
+  - imagename: opencode
+    vars:
+      - name: OPENAI_API_KEY
+        required: false
+        hasDefault: false
+      - name: ANTHROPIC_API_KEY
+        required: false
+        hasDefault: false
+      - name: GEMINI_API_KEY
+        required: false
+        hasDefault: false

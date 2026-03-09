@@ -5,10 +5,39 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 
 	authpkg "dokoko.ai/dokoko/internal/auth"
 	webcontainersstate "dokoko.ai/dokoko/internal/webcontainers/state"
 )
+
+func joinStrings(ss []string) string { return strings.Join(ss, ", ") }
+
+// ── Image variable schema ─────────────────────────────────────────────────────
+
+// getImageVars returns the environment-variable schema for a catalog image.
+//
+// GET /api/webcontainers/imagevars/{catalog_id}
+func (h *handler) getImageVars(w http.ResponseWriter, r *http.Request) {
+	catalogID := r.PathValue("catalog_id")
+	type varResp struct {
+		Name         string `json:"name"`
+		Required     bool   `json:"required"`
+		HasDefault   bool   `json:"has_default"`
+		DefaultValue string `json:"default_value"`
+	}
+	vars := h.imageConfig.FindVars(catalogID)
+	out := make([]varResp, len(vars))
+	for i, v := range vars {
+		out[i] = varResp{
+			Name:         v.Name,
+			Required:     v.Required,
+			HasDefault:   v.HasDefault,
+			DefaultValue: v.DefaultValue,
+		}
+	}
+	jsonOK(w, map[string]any{"vars": out})
+}
 
 // ── Catalog ───────────────────────────────────────────────────────────────────
 
@@ -103,6 +132,21 @@ func (h *handler) provisionWebContainer(w http.ResponseWriter, r *http.Request) 
 
 	ctx, cancel := opCtx(r)
 	defer cancel()
+
+	// Apply image-var schema: fill defaults, then enforce required vars.
+	stored := wc.GetEnvVars(body.UserID)
+	merged := h.imageConfig.ApplyDefaults(body.CatalogID, stored)
+	if missing := h.imageConfig.MissingRequired(body.CatalogID, merged); len(missing) > 0 {
+		jsonErr(w, http.StatusUnprocessableEntity,
+			"required environment variable(s) not set: "+joinStrings(missing))
+		return
+	}
+	// Persist any newly-applied defaults so they survive future provisions.
+	if len(merged) != len(stored) {
+		if err := wc.SetEnvVars(ctx, body.UserID, merged); err != nil {
+			h.log.Warn("provision: failed to persist default env vars for %s: %v", body.UserID, err)
+		}
+	}
 
 	ticket, err := wc.Provision(ctx, body.UserID, body.CatalogID)
 	if err != nil {

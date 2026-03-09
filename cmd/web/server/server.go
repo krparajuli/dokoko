@@ -8,6 +8,7 @@ import (
 	"time"
 
 	authpkg "dokoko.ai/dokoko/internal/auth"
+	imagecfg "dokoko.ai/dokoko/internal/imageconfig"
 	dockermanager "dokoko.ai/dokoko/internal/docker/manager"
 	"dokoko.ai/dokoko/pkg/logger"
 )
@@ -19,14 +20,16 @@ type Server struct {
 	logBus        *logBus
 	httpSrv       *http.Server
 	authStore     *authpkg.Store
-	allowedImages []string // catalog IDs non-admin users may provision; nil = all
+	allowedImages []string          // catalog IDs non-admin users may provision; nil = all
+	imageConfig   *imagecfg.Config  // per-image env-var schemas
 }
 
 // New creates a configured Server.
 // uiDir is the path to the built frontend files; empty string auto-detects.
 // authUsers is the list of users for authentication.
 // allowedImages is the whitelist of catalog IDs for non-admin users; nil/empty = all allowed.
-func New(mgr *dockermanager.Manager, log *logger.Logger, addr, uiDir string, authUsers []authpkg.User, allowedImages []string) *Server {
+// imageConfig holds per-image env-var schemas loaded from the YAML config file.
+func New(mgr *dockermanager.Manager, log *logger.Logger, addr, uiDir string, authUsers []authpkg.User, allowedImages []string, imageConfig *imagecfg.Config) *Server {
 	bus := newLogBus()
 	store := authpkg.NewStore(authUsers)
 	go func() {
@@ -42,6 +45,7 @@ func New(mgr *dockermanager.Manager, log *logger.Logger, addr, uiDir string, aut
 		logBus:        bus,
 		authStore:     store,
 		allowedImages: allowedImages,
+		imageConfig:   imageConfig,
 	}
 	s.httpSrv = &http.Server{
 		Addr:    addr,

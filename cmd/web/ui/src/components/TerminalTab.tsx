@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
-import { listWebCatalog, provisionWeb, getWebSession, terminateWeb, scanPorts, getPortMappings, removePortMappings, getContainerEnv, setContainerEnv } from '../api.ts'
+import { listWebCatalog, provisionWeb, getWebSession, terminateWeb, scanPorts, getPortMappings, removePortMappings, getContainerEnv, setContainerEnv, getImageVars } from '../api.ts'
 import { useAuth } from '../context/AuthContext.tsx'
-import type { CatalogEntry, MappedPort, WebSession, PortScanResult } from '../types.ts'
+import type { CatalogEntry, MappedPort, WebSession, PortScanResult, VarDef } from '../types.ts'
 
 // ── Port label helpers ────────────────────────────────────────────────────────
 
@@ -64,6 +64,13 @@ export default function TerminalTab() {
   const [draftKey, setDraftKey]         = useState('')
   const [draftValue, setDraftValue]     = useState('')
   const [addRows, setAddRows]           = useState<{key: string; value: string}[]>([])
+
+  // ── Image var schema state ───────────────────────────────────────────────────
+  const [pendingImage, setPendingImage]     = useState<string | null>(null)
+  const [pendingSchema, setPendingSchema]   = useState<VarDef[]>([])
+  const [pendingEnvForm, setPendingEnvForm] = useState<Record<string, string>>({})
+  const [loadingSchema, setLoadingSchema]   = useState(false)
+  const [sessionSchema, setSessionSchema]   = useState<VarDef[]>([])
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -207,6 +214,20 @@ export default function TerminalTab() {
     return () => { cancelled = true }
   }, [userID])
 
+  // ── Load schema for active session's catalog image ───────────────────────────
+
+  useEffect(() => {
+    if (!session?.catalog_id) {
+      setSessionSchema([])
+      return
+    }
+    let cancelled = false
+    getImageVars(session.catalog_id)
+      .then(({ vars }) => { if (!cancelled) setSessionSchema(vars ?? []) })
+      .catch(() => { if (!cancelled) setSessionSchema([]) })
+    return () => { cancelled = true }
+  }, [session?.catalog_id])
+
   // ── Actions ──────────────────────────────────────────────────────────────────
 
   const handleProvision = async (catalogID: string) => {
@@ -217,6 +238,58 @@ export default function TerminalTab() {
       if (sess.status === 'provisioning') startPoll()
     } catch (e: unknown) {
       notify('Provision failed: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const handleImageClick = async (catalogID: string) => {
+    setLoadingSchema(true)
+    try {
+      const { vars } = await getImageVars(catalogID)
+      if (vars && vars.length > 0) {
+        // Pre-fill form with existing env vars or schema defaults
+        const form: Record<string, string> = {}
+        for (const v of vars) {
+          form[v.name] = envVars[v.name] ?? (v.has_default ? v.default_value : '')
+        }
+        setPendingImage(catalogID)
+        setPendingSchema(vars)
+        setPendingEnvForm(form)
+      } else {
+        // No schema — provision immediately
+        await handleProvision(catalogID)
+      }
+    } catch {
+      // Schema fetch failed — provision anyway
+      await handleProvision(catalogID)
+    } finally {
+      setLoadingSchema(false)
+    }
+  }
+
+  const handleLaunch = async () => {
+    if (!pendingImage) return
+    setWorking(true)
+    try {
+      // Persist non-empty form values into env store before provisioning
+      const nonEmpty = Object.fromEntries(
+        Object.entries(pendingEnvForm).filter(([, v]) => v !== '')
+      )
+      if (Object.keys(nonEmpty).length > 0) {
+        const updated = { ...envVars, ...nonEmpty }
+        const result = await setContainerEnv(userID, updated) as Record<string, string>
+        setEnvVars(result ?? updated)
+      }
+      const imageID = pendingImage
+      setPendingImage(null)
+      setPendingSchema([])
+      setPendingEnvForm({})
+      const sess = await provisionWeb(userID, imageID) as WebSession
+      setSession(sess)
+      if (sess.status === 'provisioning') startPoll()
+    } catch (e: unknown) {
+      notify('Launch failed: ' + (e instanceof Error ? e.message : String(e)))
     } finally {
       setWorking(false)
     }
@@ -340,8 +413,8 @@ export default function TerminalTab() {
         <p className="text-green-600 dark:text-green-400 text-xs">{toast}</p>
       )}
 
-      {/* No session — show image selector */}
-      {!session && (
+      {/* No session — show image selector or configure panel */}
+      {!session && !pendingImage && (
         <div className="space-y-4">
           <div>
             <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-1">
@@ -355,8 +428,8 @@ export default function TerminalTab() {
             {catalog.map((entry) => (
               <button
                 key={entry.id}
-                disabled={working}
-                onClick={() => handleProvision(entry.id)}
+                disabled={working || loadingSchema}
+                onClick={() => handleImageClick(entry.id)}
                 className="text-left p-4 rounded border border-zinc-200 dark:border-zinc-700
                            bg-white dark:bg-zinc-900 hover:border-green-400 dark:hover:border-green-600
                            hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors
@@ -372,9 +445,73 @@ export default function TerminalTab() {
               </button>
             ))}
           </div>
-          {working && (
-            <p className="text-zinc-500 dark:text-zinc-400 text-xs">Provisioning container…</p>
+          {(working || loadingSchema) && (
+            <p className="text-zinc-500 dark:text-zinc-400 text-xs">
+              {loadingSchema ? 'Loading configuration…' : 'Provisioning container…'}
+            </p>
           )}
+        </div>
+      )}
+
+      {/* Configure panel — shown when selected image has a var schema */}
+      {!session && pendingImage && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 mb-1">
+                Configure {catalog.find(e => e.id === pendingImage)?.display_name ?? pendingImage}
+              </h2>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Set the environment variables required by this image before launching.
+              </p>
+            </div>
+            <button
+              onClick={() => { setPendingImage(null); setPendingSchema([]); setPendingEnvForm({}) }}
+              disabled={working}
+              className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 disabled:opacity-50"
+            >
+              ← Back
+            </button>
+          </div>
+
+          <div className="border border-zinc-200 dark:border-zinc-700 rounded divide-y divide-zinc-100 dark:divide-zinc-800">
+            {pendingSchema.map((v) => (
+              <div key={v.name} className="flex flex-col gap-1 p-3">
+                <div className="flex items-center gap-2">
+                  <code className="text-xs font-mono text-amber-600 dark:text-amber-400">{v.name}</code>
+                  {v.required
+                    ? <span className="text-[10px] font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded">required</span>
+                    : <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">optional</span>
+                  }
+                  {v.has_default && !pendingEnvForm[v.name] && (
+                    <span className="text-[10px] text-zinc-400 dark:text-zinc-500">default: {v.default_value}</span>
+                  )}
+                </div>
+                <input
+                  type={v.name.toLowerCase().includes('key') || v.name.toLowerCase().includes('secret') || v.name.toLowerCase().includes('password') ? 'password' : 'text'}
+                  value={pendingEnvForm[v.name] ?? ''}
+                  onChange={e => setPendingEnvForm(f => ({ ...f, [v.name]: e.target.value }))}
+                  placeholder={v.has_default ? v.default_value : v.required ? 'Required' : 'Optional'}
+                  className="text-xs font-mono px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:border-zinc-500 placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleLaunch}
+              disabled={working || pendingSchema.some(v => v.required && !pendingEnvForm[v.name]?.trim() && !v.has_default)}
+              className="px-4 py-1.5 rounded text-xs font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {working ? 'Launching…' : '▶ Launch'}
+            </button>
+            {pendingSchema.some(v => v.required && !pendingEnvForm[v.name]?.trim() && !v.has_default) && (
+              <span className="text-xs text-red-500 dark:text-red-400">
+                Fill in all required variables to continue.
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -546,6 +683,12 @@ export default function TerminalTab() {
                 ) : (
                   <div key={key} className="flex items-center gap-2 text-xs group py-0.5">
                     <code className="w-36 shrink-0 font-mono text-amber-600 dark:text-amber-400 truncate">{key}</code>
+                    {sessionSchema.find(v => v.name === key) && (() => {
+                      const vd = sessionSchema.find(v => v.name === key)!
+                      return vd.required
+                        ? <span className="shrink-0 text-[9px] font-medium text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-1 py-0.5 rounded leading-none">req</span>
+                        : <span className="shrink-0 text-[9px] font-medium text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 rounded leading-none">opt</span>
+                    })()}
                     <code className="flex-1 font-mono text-zinc-500 dark:text-zinc-400 truncate">{value || '""'}</code>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                       <button

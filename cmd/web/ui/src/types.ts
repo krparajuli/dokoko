@@ -109,6 +109,19 @@ export interface UserRecord {
   role: 'admin' | 'user'
 }
 
+// ── Image variable schema ──────────────────────────────────────────────────
+
+export interface VarDef {
+  name: string
+  required: boolean
+  has_default: boolean
+  default_value: string
+}
+
+export interface ImageVarSchema {
+  vars: VarDef[]
+}
+
 // ── Web Containers ─────────────────────────────────────────────────────────
 
 export interface CatalogEntry {
