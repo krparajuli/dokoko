@@ -2,13 +2,14 @@ import type { Tab, HealthStatus } from '../types.ts'
 import { useTheme } from '../context/ThemeContext.tsx'
 import { useAuth } from '../context/AuthContext.tsx'
 
-const ALL_TABS: { id: Tab; label: string }[] = [
+const ALL_TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: 'images',     label: 'Images' },
   { id: 'containers', label: 'Containers' },
   { id: 'volumes',    label: 'Volumes' },
   { id: 'networks',   label: 'Networks' },
   { id: 'execs',      label: 'Execs' },
   { id: 'terminal',   label: 'Terminal' },
+  { id: 'users',      label: 'Users', adminOnly: true },
 ]
 
 interface Props {
@@ -25,7 +26,7 @@ export default function Header({ activeTab, onTabChange, dockerStatus, viewMode,
 
   const tabs = viewMode === 'user'
     ? ALL_TABS.filter((t) => t.id === 'terminal')
-    : ALL_TABS
+    : ALL_TABS.filter((t) => !t.adminOnly || user?.role === 'admin')
 
   return (
     <header className="bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex-shrink-0">

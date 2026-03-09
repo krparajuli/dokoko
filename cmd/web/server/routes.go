@@ -55,6 +55,12 @@ func (s *Server) routes(uiDir string) http.Handler {
 	mux.HandleFunc("POST /api/execs/{id}/start", h.startExec)
 	mux.HandleFunc("GET /api/execs/{id}/inspect", h.inspectExec)
 
+	// User management (admin only)
+	mux.HandleFunc("GET /api/users", h.listUsers)
+	mux.HandleFunc("POST /api/users", h.createUser)
+	mux.HandleFunc("DELETE /api/users/{username}", h.deleteUser)
+	mux.HandleFunc("PUT /api/users/{username}/password", h.updateUserPassword)
+
 	// Web Containers (user terminal sessions)
 	mux.HandleFunc("GET /api/webcontainers/catalog", h.listWebCatalog)
 	mux.HandleFunc("POST /api/webcontainers/provision", h.provisionWebContainer)

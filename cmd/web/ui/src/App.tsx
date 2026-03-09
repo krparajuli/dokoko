@@ -6,6 +6,7 @@ import VolumesTab from './components/VolumesTab.tsx'
 import NetworksTab from './components/NetworksTab.tsx'
 import ExecsTab from './components/ExecsTab.tsx'
 import TerminalTab from './components/TerminalTab.tsx'
+import UsersTab from './components/UsersTab.tsx'
 import LogsPanel from './components/LogsPanel.tsx'
 import LoginPage from './components/LoginPage.tsx'
 import { AuthProvider, useAuth } from './context/AuthContext.tsx'
@@ -73,6 +74,7 @@ function AppInner() {
         {effectiveTab === 'networks'   && <NetworksTab />}
         {effectiveTab === 'execs'      && <ExecsTab />}
         {effectiveTab === 'terminal'   && <TerminalTab />}
+        {effectiveTab === 'users'      && <UsersTab />}
       </main>
 
       <LogsPanel />

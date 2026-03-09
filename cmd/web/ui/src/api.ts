@@ -89,3 +89,13 @@ export const getPortMappings  = (user_id: string) =>
   get(`/proxyportmap/mappings/${encodeURIComponent(user_id)}`)
 export const removePortMappings = (user_id: string) =>
   del(`/proxyportmap/mappings/${encodeURIComponent(user_id)}`)
+
+// ── User management (admin only) ──────────────────────────────────────────────
+import type { UserRecord } from './types.ts'
+export const listUsers          = () => get<UserRecord[]>('/users')
+export const createUserApi      = (username: string, password: string, role: string) =>
+  post<UserRecord>('/users', { username, password, role })
+export const deleteUserApi      = (username: string) =>
+  del(`/users/${encodeURIComponent(username)}`)
+export const updatePasswordApi  = (username: string, password: string) =>
+  request<unknown>('PUT', `/users/${encodeURIComponent(username)}/password`, { password })

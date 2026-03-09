@@ -102,7 +102,12 @@ export interface HealthStatus {
   error?: string
 }
 
-export type Tab = 'images' | 'containers' | 'volumes' | 'networks' | 'execs' | 'terminal'
+export type Tab = 'images' | 'containers' | 'volumes' | 'networks' | 'execs' | 'terminal' | 'users'
+
+export interface UserRecord {
+  username: string
+  role: 'admin' | 'user'
+}
 
 // ── Web Containers ─────────────────────────────────────────────────────────
 

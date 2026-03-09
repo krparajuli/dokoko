@@ -106,6 +106,70 @@ func (s *Store) DeleteSession(token string) {
 	s.mu.Unlock()
 }
 
+// ListUsers returns all users with passwords omitted.
+func (s *Store) ListUsers() []User {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]User, 0, len(s.users))
+	for _, u := range s.users {
+		out = append(out, User{Username: u.Username, Role: u.Role})
+	}
+	return out
+}
+
+// CreateUser adds a new user. Returns an error if the username already exists.
+func (s *Store) CreateUser(u User) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.users[u.Username]; exists {
+		return errors.New("username already exists")
+	}
+	cp := u
+	s.users[u.Username] = &cp
+	return nil
+}
+
+// DeleteUser removes a user and invalidates all their sessions.
+// Returns an error if the user is not found or is the last admin.
+func (s *Store) DeleteUser(username string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.users[username]
+	if !ok {
+		return errors.New("user not found")
+	}
+	if u.Role == RoleAdmin {
+		count := 0
+		for _, user := range s.users {
+			if user.Role == RoleAdmin {
+				count++
+			}
+		}
+		if count <= 1 {
+			return errors.New("cannot delete the last admin user")
+		}
+	}
+	delete(s.users, username)
+	for token, sess := range s.sessions {
+		if sess.Username == username {
+			delete(s.sessions, token)
+		}
+	}
+	return nil
+}
+
+// UpdatePassword changes the password for an existing user.
+func (s *Store) UpdatePassword(username, password string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.users[username]
+	if !ok {
+		return errors.New("user not found")
+	}
+	u.Password = password
+	return nil
+}
+
 // PruneExpired removes all sessions whose ExpiresAt is in the past.
 func (s *Store) PruneExpired() {
 	now := time.Now()
