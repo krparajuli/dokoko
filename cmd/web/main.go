@@ -83,6 +83,17 @@ func main() {
 		log.Info("seeded admin user %q", *adminUser)
 	}
 
+	// ── Seed sample user on every run ───────────────────────────────────────
+	if err := store.SeedUser(authpkg.User{
+		Username: "sampleuser",
+		Password: "Password123!",
+		Role:     authpkg.RoleUser,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to seed sample user: %v\n", err)
+		os.Exit(1)
+	}
+	log.Info("seeded sample user %q", "sampleuser")
+
 	mgr, err := dockermanager.New(ctx, log)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to connect to Docker: %v\n", err)
