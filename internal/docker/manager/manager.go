@@ -63,6 +63,10 @@ import (
 	portproxyclerk "dokoko.ai/dokoko/internal/portproxy/clerk"
 	portproxyops "dokoko.ai/dokoko/internal/portproxy/ops"
 	portproxystate "dokoko.ai/dokoko/internal/portproxy/state"
+	setupactor "dokoko.ai/dokoko/internal/setup/actor"
+	setupops "dokoko.ai/dokoko/internal/setup/ops"
+	setupregister "dokoko.ai/dokoko/internal/setup/register"
+	setupstate "dokoko.ai/dokoko/internal/setup/state"
 	proxyportmapactor "dokoko.ai/dokoko/internal/proxyportmap/actor"
 	proxyportmapclerk "dokoko.ai/dokoko/internal/proxyportmap/clerk"
 	proxyportmapops "dokoko.ai/dokoko/internal/proxyportmap/ops"
@@ -116,6 +120,10 @@ type Manager struct {
 	// Recreated on every connect.
 	containers *dockercontaineractor.Actor
 	exec       *dockerexecactor.Actor
+
+	// Setup subsystem: runs once per connect() before the server may start.
+	// Recreated on each connect so reconnects also re-verify infrastructure.
+	setup *setupregister.Register
 
 	// Port-proxy subsystem: state+store survive reconnects; actor+clerk recreated.
 	portproxyState *portproxystate.State
@@ -313,6 +321,14 @@ func (m *Manager) Exec() *dockerexecactor.Actor {
 	return m.exec
 }
 
+// Setup returns the setup Register for the current connection.
+// Phase() and Wait() reflect the status of the most recent setup run.
+func (m *Manager) Setup() *setupregister.Register {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.setup
+}
+
 // PortProxy returns the port-proxy Clerk (actor + state + store).
 // EnsureProxy, RegisterContainer, DeregisterContainer.
 func (m *Manager) PortProxy() *portproxyclerk.Clerk {
@@ -372,6 +388,29 @@ func (m *Manager) connect(ctx context.Context) error {
 	}
 	m.conn = conn
 
+	// ── Setup subsystem first (blocking) ─────────────────────────────────────
+	// Run startup setup before any other subsystem.  This ensures the Docker
+	// infrastructure (nginx:alpine image + dokoko-proxy container) is fully
+	// ready before the HTTP server is allowed to start serving requests.
+	ppOps := portproxyops.New(conn, m.log)
+	sOps := setupops.New(ppOps, m.log)
+	st := setupstate.New()
+	sActor := setupactor.New(sOps, st, m.log)
+	m.setup = setupregister.New(sActor, st)
+	m.setup.Run(ctx)
+
+	setupCtx, setupCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer setupCancel()
+	if err := m.setup.Wait(setupCtx); err != nil {
+		return fmt.Errorf("setup: %w", err)
+	}
+
+	// ── Port-proxy subsystem ──────────────────────────────────────────────────
+	m.portproxyActor = portproxyactor.New(ppOps, m.portproxyState, m.portproxyStore, m.log, nil)
+	m.portProxy = portproxyclerk.New(m.portproxyActor, m.portproxyState, m.portproxyStore, m.log)
+
+	// ── Remaining subsystems ──────────────────────────────────────────────────
+
 	// Build ops — each bound to the fresh connection.
 	imageOps     := dockerimageops.New(conn, m.log)
 	containerOps := dockercontainerops.New(conn, m.log)
@@ -410,22 +449,6 @@ func (m *Manager) connect(ctx context.Context) error {
 	}
 
 	m.log.Debug("manager: store bootstrap complete")
-
-	// Set up port-proxy subsystem.
-	ppOps := portproxyops.New(conn, m.log)
-	m.portproxyActor = portproxyactor.New(ppOps, m.portproxyState, m.portproxyStore, m.log, nil)
-	m.portProxy = portproxyclerk.New(m.portproxyActor, m.portproxyState, m.portproxyStore, m.log)
-
-	// Ensure the proxy container is running (async, non-blocking on failure).
-	if t, err := m.portProxy.EnsureProxy(ctx); err != nil {
-		m.log.Warn("manager: portproxy EnsureProxy submit failed: %v", err)
-	} else {
-		ensCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-		defer cancel()
-		if err := t.Wait(ensCtx); err != nil {
-			m.log.Warn("manager: portproxy EnsureProxy timed out or failed: %v", err)
-		}
-	}
 
 	// Set up web-containers subsystem.
 	wcOps := webcontainersops.New(conn, m.log)
@@ -483,6 +506,9 @@ func (m *Manager) shutdown() {
 		m.exec.Close()
 		m.exec = nil
 	}
+
+	// Clear setup reference (no goroutines to close — it's a one-shot run).
+	m.setup = nil
 
 	// Shut down port-proxy subsystem.
 	m.portProxy = nil

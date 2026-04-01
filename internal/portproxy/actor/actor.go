@@ -20,7 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
+	"time"
 
 	portproxyconfig "dokoko.ai/dokoko/internal/portproxy/config"
 	portproxystate "dokoko.ai/dokoko/internal/portproxy/state"
@@ -86,13 +88,18 @@ type Ticket struct {
 
 	// Done is closed when the operation has settled.
 	Done <-chan struct{}
+
+	// err is set by the worker before Done is closed.
+	// Safe to read after Done closes (Go memory model guarantees visibility).
+	err error
 }
 
 // Wait blocks until the operation settles or ctx expires.
+// Returns the operation's error on failure, or ctx.Err() on timeout.
 func (t *Ticket) Wait(ctx context.Context) error {
 	select {
 	case <-t.Done:
-		return nil
+		return t.err
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -105,6 +112,7 @@ type workItem struct {
 	ctx    context.Context
 	fn     func(ctx context.Context) (resultRef string, err error)
 	done   chan struct{}
+	ticket *Ticket
 }
 
 // ── Actor ─────────────────────────────────────────────────────────────────────
@@ -121,6 +129,13 @@ type Actor struct {
 	closed    chan struct{}
 	closeOnce sync.Once
 	wg        sync.WaitGroup
+
+	// reloadMu serialises nginx config regeneration and reload.
+	// Without this, concurrent RegisterContainer / DeregisterContainer calls
+	// for different users write to the same proxy.conf simultaneously, producing
+	// a corrupt file that crashes nginx and triggers "network sandbox not found"
+	// on the subsequent container-connect attempt.
+	reloadMu sync.Mutex
 }
 
 // New creates an Actor and immediately starts cfg.Workers background workers.
@@ -180,10 +195,18 @@ func (a *Actor) RegisterContainer(ctx context.Context, name, id string, ports []
 	change := a.state.RequestChange(portproxystate.OpRegisterContainer, name, meta)
 
 	fn := func(ctx context.Context) (string, error) {
-		// 1. Inspect the proxy container to get its ID.
+		// 1. Get the proxy container ID — ensure it exists first if needed.
 		proxyInfo, err := a.ops.InspectContainer(ctx, "dokoko-proxy")
 		if err != nil {
-			return "", fmt.Errorf("inspect proxy container: %w", err)
+			// Container may have been removed; try to recreate it.
+			newID, ensureErr := a.ops.EnsureProxyContainer(ctx)
+			if ensureErr != nil {
+				return "", fmt.Errorf("ensure proxy container: %w", ensureErr)
+			}
+			proxyInfo, err = a.ops.InspectContainer(ctx, newID)
+			if err != nil {
+				return "", fmt.Errorf("inspect proxy container after ensure: %w", err)
+			}
 		}
 		proxyID := proxyInfo.ID
 
@@ -208,25 +231,34 @@ func (a *Actor) RegisterContainer(ctx context.Context, name, id string, ports []
 			return "0 ports", nil
 		}
 
-		// 3. Create a dedicated bridge network.
-		networkID, err := a.ops.CreateProxyNetwork(ctx, name)
-		if err != nil {
-			a.store.ReleaseMappingsFor(name)
-			return "", fmt.Errorf("create proxy network for %s: %w", name, err)
+		// 3+4. Create bridge network and connect both containers.
+		// Retry once if the network disappears between creation and connection
+		// (e.g. a concurrent DeregisterContainer removed it).
+		var connectErr error
+		for attempt := range 2 {
+			networkID, err := a.ops.CreateProxyNetwork(ctx, name)
+			if err != nil {
+				a.store.ReleaseMappingsFor(name)
+				return "", fmt.Errorf("create proxy network for %s: %w", name, err)
+			}
+			connectErr = a.ops.ConnectToProxyNetwork(ctx, networkID, proxyID, id, name)
+			if connectErr == nil {
+				break
+			}
+			if strings.Contains(connectErr.Error(), "not found") {
+				a.log.Warn("portproxy actor: network disappeared during connect (attempt %d/2), recreating...", attempt+1)
+				continue
+			}
+			break // non-retryable error
 		}
-
-		// 4. Connect proxy and managed container to the bridge network.
-		if err := a.ops.ConnectToProxyNetwork(ctx, networkID, proxyID, id, name); err != nil {
+		if connectErr != nil {
 			a.store.ReleaseMappingsFor(name)
 			_ = a.ops.DisconnectFromProxyNetwork(ctx, "proxy_"+name, proxyID, id)
-			return "", fmt.Errorf("connect to proxy network for %s: %w", name, err)
+			return "", fmt.Errorf("connect to proxy network for %s: %w", name, connectErr)
 		}
 
 		// 5. Regenerate and reload nginx config (non-fatal on failure).
-		newCfg := portproxyconfig.Generate(a.store.AllActive())
-		if err := a.ops.ReloadNginxConfig(ctx, proxyID, newCfg); err != nil {
-			a.log.Warn("portproxy actor: nginx reload failed (non-fatal): %v", err)
-		}
+		a.reloadNginx(ctx, proxyID)
 
 		return fmt.Sprintf("%d ports", len(allocated)), nil
 	}
@@ -268,16 +300,29 @@ func (a *Actor) DeregisterContainer(ctx context.Context, name string) (*Ticket, 
 
 		// Reload nginx config (best-effort).
 		if proxyID != "" {
-			newCfg := portproxyconfig.Generate(a.store.AllActive())
-			if err := a.ops.ReloadNginxConfig(ctx, proxyID, newCfg); err != nil {
-				a.log.Warn("portproxy actor: nginx reload failed during deregister (non-fatal): %v", err)
-			}
+			a.reloadNginx(ctx, proxyID)
 		}
 
 		return fmt.Sprintf("freed %d ports", len(freed)), nil
 	}
 
 	return a.submit(change, ctx, fn)
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// reloadNginx regenerates the nginx config from the current store state and
+// reloads nginx.  It holds reloadMu for the entire generate+write+reload
+// sequence so that concurrent calls from different workers (e.g. two users
+// both having a port scan complete at the same time) never write to
+// proxy.conf simultaneously, which would corrupt the file and crash nginx.
+func (a *Actor) reloadNginx(ctx context.Context, proxyID string) {
+	a.reloadMu.Lock()
+	defer a.reloadMu.Unlock()
+	newCfg := portproxyconfig.Generate(a.store.AllActive())
+	if err := a.ops.ReloadNginxConfig(ctx, proxyID, newCfg); err != nil {
+		a.log.Warn("portproxy actor: nginx reload failed (non-fatal): %v", err)
+	}
 }
 
 // ── Shutdown ──────────────────────────────────────────────────────────────────
@@ -304,11 +349,12 @@ func (a *Actor) submit(change *portproxystate.StateChange, ctx context.Context, 
 	}
 
 	done := make(chan struct{})
-	item := workItem{change: change, ctx: ctx, fn: fn, done: done}
+	t := &Ticket{ChangeID: change.ID, Done: done}
+	item := workItem{change: change, ctx: ctx, fn: fn, done: done, ticket: t}
 
 	select {
 	case a.queue <- item:
-		return &Ticket{ChangeID: change.ID, Done: done}, nil
+		return t, nil
 
 	case <-a.closed:
 		_, _ = a.state.Abandon(change.ID, "actor closed")
@@ -346,6 +392,7 @@ func (a *Actor) drainQueue(workerID int) {
 		select {
 		case item := <-a.queue:
 			_, _ = a.state.Abandon(item.change.ID, "actor shutting down")
+			item.ticket.err = ErrActorClosed
 			close(item.done)
 		default:
 			return
@@ -362,12 +409,20 @@ func (a *Actor) execute(workerID int, item workItem) {
 	case <-item.ctx.Done():
 		reason := fmt.Sprintf("context done before execution: %v", item.ctx.Err())
 		_, _ = a.state.Abandon(changeID, reason)
+		item.ticket.err = item.ctx.Err()
 		return
 	default:
 	}
 
-	resultRef, err := item.fn(item.ctx)
+	// Use a fresh context for the Docker operations so they are not bounded by
+	// the caller's HTTP request timeout (typically 30 s).  The caller context
+	// is only used as a pre-execution gate (above).
+	execCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	resultRef, err := item.fn(execCtx)
 	if err != nil {
+		item.ticket.err = err
 		a.log.Error("portproxy worker %d: change %s failed: %v", workerID, changeID, err)
 		_, _ = a.state.RecordFailure(changeID, err)
 		return

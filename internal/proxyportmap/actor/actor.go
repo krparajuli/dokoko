@@ -168,12 +168,26 @@ func (a *Actor) ScanAndMap(ctx context.Context, userID, containerName, container
 			return "", fmt.Errorf("scan ports: %w", err)
 		}
 
-		// 2. Store result immediately — even with no host-port mapping yet.
-		//    This guarantees the user always sees found ports regardless of
-		//    whether proxy registration succeeds later.
+		// 2. Store result immediately so the UI can see which ports are
+		//    listening even before proxy registration completes.
+		//    For ports that were already registered in a previous scan we
+		//    carry their HostPort forward — this prevents a brief window
+		//    every scan-cycle where the URL appears broken while
+		//    re-registration is in flight.
+		existingMappings := a.portProxy.Store().GetByContainer(containerName)
+		portToHostPort := make(map[uint16]uint16, len(existingMappings))
+		for _, m := range existingMappings {
+			if m.Status == portproxystate.MappingStatusActive {
+				portToHostPort[m.ContainerPort.Port] = m.HostPort
+			}
+		}
 		rawMapped := make([]proxyportmapstate.MappedPort, len(rawPorts))
 		for i, info := range rawPorts {
-			rawMapped[i] = proxyportmapstate.MappedPort{ContainerPort: info.Port, Process: info.Process}
+			rawMapped[i] = proxyportmapstate.MappedPort{
+				ContainerPort: info.Port,
+				Process:       info.Process,
+				HostPort:      portToHostPort[info.Port], // 0 only if not yet allocated
+			}
 		}
 		a.store.SetResult(&proxyportmapstate.ScanResult{
 			UserID:        userID,
@@ -356,7 +370,13 @@ func (a *Actor) execute(id int, item workItem) {
 	default:
 	}
 
-	resultRef, err := item.fn(item.ctx)
+	// Use a fresh context so Docker ops are not bounded by the caller's
+	// HTTP request timeout (30 s).  The caller context is only used as a
+	// pre-execution gate above.
+	execCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	resultRef, err := item.fn(execCtx)
 	if err != nil {
 		a.log.Error("proxyportmap worker %d: change %s failed: %v", id, item.change.ID, err)
 		_, _ = a.state.RecordFailure(item.change.ID, err)

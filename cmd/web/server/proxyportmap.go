@@ -87,7 +87,11 @@ func (h *handler) getMappings(w http.ResponseWriter, r *http.Request) {
 
 	result := ppm.GetResult(userID)
 	if result == nil {
-		jsonErr(w, http.StatusNotFound, "no port mapping found for user")
+		jsonOK(w, portScanResp{
+			UserID:    userID,
+			Ports:     []portEntryResp{},
+			ScannedAt: time.Now(),
+		})
 		return
 	}
 	jsonOK(w, buildPortScanResp(r, result))

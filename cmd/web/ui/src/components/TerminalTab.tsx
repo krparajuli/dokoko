@@ -152,7 +152,8 @@ export default function TerminalTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.container_id])
 
-  // Auto-scan ports every 2 minutes while the terminal is ready.
+  // Auto-scan ports every 15 seconds while the terminal is ready so newly
+  // started services are discovered quickly.
   useEffect(() => {
     if (!ttydReady || !session?.status || session.status !== 'ready') {
       stopPortScanInterval()
@@ -169,7 +170,8 @@ export default function TerminalTab() {
       }
     }
 
-    portScanIntervalRef.current = window.setInterval(runScan, 2 * 60 * 1000)
+    runScan()
+    portScanIntervalRef.current = window.setInterval(runScan, 15_000)
     return stopPortScanInterval
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ttydReady, session?.status, userID])

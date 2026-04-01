@@ -30,7 +30,7 @@ export default function LoginPage({ onShowRegister }: Props) {
       <div className="w-full max-w-sm p-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
         <div className="mb-8 text-center">
           <span className="text-green-600 dark:text-green-400 font-bold text-2xl tracking-tight">dokoko</span>
-          <p className="text-zinc-400 dark:text-zinc-600 text-sm mt-1">docker manager</p>
+          <p className="text-zinc-400 dark:text-zinc-600 text-sm mt-1">Your Personal AI Coder in the Web</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
